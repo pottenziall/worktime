@@ -1,10 +1,10 @@
+import datetime
 import logging
 import tkinter
 import tkinter.ttk as ttk
 import typing
 
 _logger = logging.getLogger(__name__)
-
 
 
 class Window:
@@ -18,12 +18,17 @@ class Window:
         self._frame = tkinter.Frame(root)
         self._frame.pack(padx=15, pady=15)
 
-        self._input = tkinter.Entry(self._frame, width=400)
+        self._input = tkinter.Entry(self._frame, width=100)
         self._input.pack(pady=20)
+
+        today = str(datetime.date.today().strftime("%d.%m.%Y")) + " "
+        self._input.insert(tkinter.END, today)
+
+        self._b = tkinter.Button(self._frame, text="Submit")
 
         self._init_table(self._frame)
 
-        self._log = tkinter.Text(self._frame, width=400)
+        self._log = tkinter.Text(self._frame, width=100)
         self._log.pack(pady=20)
 
     def _init_table(self, frame: tkinter.Frame) -> None:
