@@ -4,15 +4,7 @@ from dataclasses import dataclass, field, fields
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
-TABLE_COLUMNS = {"date": 120, "worktime": 100, "pause": 100, "overtime": 100, "whole time": 120, "time marks": 400}
-DB_CONFIG = {"path": "/home/vova/PycharmProjects/worktime/worktime.db",
-             "default_table": "worktime",
-             "tables": {
-                 "worktime": [
-                     ("date", "VARCHAR(8) NOT NULL"),
-                     ("times", "VARCHAR(200) NOT NULL"),
-                 ]}}
-_DEFAULT_WORKDAY_TIMEDELTA = timedelta(hours=8)
+DEFAULT_WORKDAY_TIMEDELTA = timedelta(hours=8)
 DATE_STRING_PATTERN = "%d.%m.%Y"
 TIME_STRING_PATTERN = "%H:%M"
 DATE_PATTERN = r"\d\d.\d\d.\d\d\d\d"
@@ -44,7 +36,7 @@ class WorkDay:
     @property
     def color(self) -> str:
         if any([
-            self.worktime < _DEFAULT_WORKDAY_TIMEDELTA,
+            self.worktime < DEFAULT_WORKDAY_TIMEDELTA,
             self.whole_time == timedelta(seconds=0),
         ]):
             return "red"
@@ -81,6 +73,8 @@ class WorkDay:
     @classmethod
     def from_string(cls, data_string: str) -> Optional["WorkDay"]:
         input_elements = data_string.split()
+        if not len(input_elements) >= 2:
+            _logger.error(f"Input value must include date and at least one time mark, like: 10.10.2022 07:00")
         if not WorkDay._check_values(input_elements):
             return
         found = re.findall(rf"{DATE_PATTERN}|{TIME_PATTERN}", data_string)
@@ -108,27 +102,25 @@ class WorkDay:
     @property
     def worktime(self) -> timedelta:
         worktime = self.whole_time - self.pauses
-        return worktime if worktime <= _DEFAULT_WORKDAY_TIMEDELTA else _DEFAULT_WORKDAY_TIMEDELTA
+        return worktime if worktime <= DEFAULT_WORKDAY_TIMEDELTA else DEFAULT_WORKDAY_TIMEDELTA
 
     @property
     def overtime(self):
         worktime = self.whole_time - self.pauses
-        if worktime > _DEFAULT_WORKDAY_TIMEDELTA:
-            return worktime - _DEFAULT_WORKDAY_TIMEDELTA
+        if worktime > DEFAULT_WORKDAY_TIMEDELTA:
+            return worktime - DEFAULT_WORKDAY_TIMEDELTA
         else:
             return timedelta(seconds=0)
 
     @staticmethod
     def _check_values(values: List[str]) -> bool:
-        if not len(values) > 1:
-            _logger.error(f"Input value must include at least date and one time mark: {values}")
-            return False
+        #TODO: warning if day is Saturday or Sunday
         for value in values:
             pattern = TIME_STRING_PATTERN if len(value) < 6 else DATE_STRING_PATTERN
             try:
                 datetime.strptime(value, pattern)
             except ValueError:
-                _logger.error(f"Wrong value passed: {value}")
+                _logger.error(f"Wrong value passed: '{value}'")
                 return False
         return True
 
