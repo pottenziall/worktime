@@ -74,7 +74,8 @@ class WorkDay:
     def from_string(cls, data_string: str) -> Optional["WorkDay"]:
         input_elements = data_string.split()
         if not len(input_elements) >= 2:
-            _logger.error(f"Input value must include date and at least one time mark, like: 10.10.2022 07:00")
+            _logger.error(f"Input must include date and at least one time mark, like 10.10.2022 07:00")
+            return
         if not WorkDay._check_values(input_elements):
             return
         found = re.findall(rf"{DATE_PATTERN}|{TIME_PATTERN}", data_string)
@@ -120,7 +121,7 @@ class WorkDay:
             try:
                 datetime.strptime(value, pattern)
             except ValueError:
-                _logger.error(f"Wrong value passed: '{value}'")
+                _logger.error(f"Wrong input value: '{value}'")
                 return False
         return True
 

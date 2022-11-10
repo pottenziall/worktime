@@ -13,12 +13,17 @@ from window import Window
 _logger = logging.getLogger("main")
 _logger.setLevel(logging.DEBUG)
 
-
+#TODO: select table columns in settings
+#TODO: edit table row (update data)
+#TODO: add vacations
+#TODO: add scrollbars
 class App:
     def __init__(self, ui: Window):
         self.ui = ui
         self.ui.submit_button.config(command=self._submit)
+        self.ui.edit_button.config(command=self._edit_row)
         self.ui.delete_button.config(command=self._delete_entry)
+
         self.ui.input.bind('<Return>', self._submit)
         self._connect_to_db()
         self._fill_table()
@@ -48,10 +53,10 @@ class App:
             exist_time_marks = found_in_db[0][1].split()
             workday.update(exist_time_marks)
             self.db.update(workday.db_format())
-            _logger.info(f"Data has been updated in db: '{workday}'")
+            _logger.info(f'Data has been updated in db: "{workday}"')
         elif len(found_in_db) == 0:
             self.db.add(workday.db_format())
-            _logger.info(f"Data has written to db: '{workday}'")
+            _logger.info(f'Data has written to db: "{workday}"')
         else:
             _logger.error(f"Wrong number of database entries found for the key '{workday.date}': {found_in_db}")
 
@@ -59,7 +64,10 @@ class App:
         self.ui.clear_table()
         self.workdays = []
         # TODO: sort values from db by date
-        for row in self.db.read(limit=15):
+        result = self.db.read(limit=105)
+        if not result:
+            return
+        for row in result:
             workday = WorkDay.from_string(" ".join(row))
             if workday is None:
                 _logger.error(f"Wrong data in the database. Not recognized: {row}")
@@ -67,17 +75,26 @@ class App:
             self.workdays.append(workday.as_tuple())
         self.ui.insert_data_to_table(self.workdays)
 
+    def _edit_row(self):
+        row_values = self.ui.get_selected(datarow_only=True)
+        if row_values is not None:
+            self.ui.create_editor()
+
+
     def _delete_entry(self):
         # TODO: only one askyesno window for many items to delete
-        table_values = self.ui.get_selected()
-        for table_value in table_values:
-            row_to_delete = "date", table_value[0]
-            found_in_db = self.db.read_with_filter(row_to_delete)
-            if len(found_in_db) != 1:
-                _logger.error(f"Wrong number of database entries found for the key '{table_value[0]}': {found_in_db}")
-            if self.ui.ask_delete(str(found_in_db[0])):
+        row_values = self.ui.get_selected(datarow_only=True)
+        if row_values is not None:
+            for row_value in row_values:
+                row_to_delete = "date", row_value[0]
+                found_in_db = self.db.read_with_filter(row_to_delete)
+                if len(found_in_db) != 1:
+                    _logger.warning(f"Nothing to delete in database")
+                    return
+                if not self.ui.ask_delete(str(found_in_db[0])):
+                    return
                 self.db.delete(row_to_delete)
-        self._fill_table()
+            self._fill_table()
 
 
 file_handler = logging.FileHandler("worktime.log", "a", encoding="utf-8")
@@ -95,9 +112,9 @@ window = Window(root)
 
 text_handler = WidgetLogger(window.text, root)
 logging.getLogger("").addHandler(text_handler)
-_logger.info("Start application")
+_logger.debug("Start application")
 app = App(window)
 
 root.mainloop()
 app.db.close_all()
-_logger.info("Application closed")
+_logger.debug("Application closed")

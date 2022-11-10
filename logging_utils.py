@@ -8,9 +8,9 @@ class WidgetLogger(logging.Handler):
         self.setLevel(logging.DEBUG)
         self.widget = widget
         self.widget.config(state='disabled')
-        self.widget.tag_config("INFO", foreground="green")
+        self.widget.tag_config("INFO", foreground="black")
         self.widget.tag_config("DEBUG", foreground="grey")
-        self.widget.tag_config("WARNING", foreground="orange")
+        self.widget.tag_config("WARNING", foreground="dark goldenrod")
         self.widget.tag_config("ERROR", foreground="red")
         self.widget.tag_config("CRITICAL", foreground="red", underline=True)
         # self.red = self.widget.tag_configure("red", foreground="red")

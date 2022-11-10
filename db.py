@@ -30,7 +30,7 @@ class DbRW:
                 _logger.warning(f"Database '{self._db_path}' is new. Parsing config and recreating tables in db")
                 self._parse_config(config)
             _logger.info(
-                f"Connected to the database '{self._db_path}' with size {os.path.getsize(self._db_path) / 1024} KB")
+                f"""Connected to the database "{self._db_path}", size: {os.path.getsize(self._db_path) / 1024} KB""")
 
     def _parse_config(self, config: DbConfig):
         _logger.debug("Creating database tables")

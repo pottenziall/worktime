@@ -1,11 +1,12 @@
 import datetime
+import time
 import logging
 import tkinter
 import tkinter.ttk as ttk
 from datetime import date, datetime
 from tkinter import messagebox
-from typing import Dict, List, Tuple
-from constants import DEFAULT_WORKDAY_TIMEDELTA
+from typing import Dict, List, Tuple, Optional
+from constants import DATE_STRING_PATTERN
 from functools import reduce
 from operator import add
 
@@ -27,7 +28,7 @@ class Window:
     def insert_data_to_table(self, data: List[Tuple]) -> None:
         days_data = {}
         exist = set()
-        for item in sorted(data):
+        for item in sorted(data, key=lambda x: datetime.strptime(x[0], DATE_STRING_PATTERN)):
             item = list(item)
             tag = item.pop()
             item_date = datetime.strptime(item[0], "%d.%m.%Y")
@@ -36,10 +37,10 @@ class Window:
                 self._table.insert("", tkinter.END, iid=month, text=month, open=True)
             week = str(item_date.isocalendar()[1])
             if week not in exist:
-                self._table.insert(month, tkinter.END, iid=week, text=f"week {week}", open=True)
+                self._table.insert(month, tkinter.END, iid=week, text=f"w{week}", open=True)
                 days_data[week] = []
             exist.update([month, week])
-            self._table.insert(week, tkinter.END, values=item, tags=tag)
+            self._table.insert(week, tkinter.END, iid=f"data{week}{item_date.weekday()}", values=item, tags=tag)
             days_data[week].append(item[1:-1])
         self._table.update()
         self._calculate_total_values(days_data)
@@ -58,10 +59,31 @@ class Window:
             self._table.insert(week, tkinter.END, values=result)
             self._table.update()
 
-    def get_selected(self):
+    def create_editor(self):
+        #self.root.wm_attributes("-disabled", True)
+        modal = tkinter.Toplevel(self.root)
+        modal.geometry("400x300")
+        modal.grab_set()
+
+        entry = ttk.Entry(modal, width=100)
+        entry.pack()
+
+        submit = tkinter.Button(modal, text="SUBMIT", command=modal.destroy)
+        submit.pack(padx=10)
+        self.root.wait_window(modal)
+        self.root.wait_visibility()
+        self.root.grab_set()
+        modal.transient(self.root)
+
+    def get_selected(self, datarow_only: bool = False) -> Optional[List]:
         select = self._table.selection()
-        values = [self._table.item(sel, option="values") for sel in select]
-        return values
+        if select:
+            if datarow_only and not select[0].startswith("data"):
+                _logger.warning("Please, select data row")
+                return
+            values = [self._table.item(sel, option="values") for sel in select]
+            return values
+        _logger.debug("Please, select row in table")
 
     def clear_table(self):
         for i in self._table.get_children():
@@ -82,29 +104,43 @@ class Window:
         return False
 
     def _init_ui(self, root: tkinter.Tk) -> None:
-        self._frame = tkinter.Frame(root)
-        self._frame.pack(padx=15, pady=15)
+        self._main_frame = ttk.LabelFrame(root, text="Input date and time marks, like: 10.10.2022 07:35 15:50")
+        self._main_frame.pack(padx=15, pady=15, fill="both", expand=True)
 
-        entry_label = tkinter.Label(self._frame, anchor='w',
-                                    text="Input date and time marks, like: 10.10.2022 07:35 15:50", width=90)
-        entry_label.pack()
+        self._input_frame = ttk.Frame(self._main_frame)
+        self._input_frame.pack()
+
+        self._table_frame = ttk.Frame(self._main_frame)
+        self._table_frame.pack(fill="both", expand=True)
+
+        self._buttons_frame = ttk.Frame(self._main_frame)
+        self._buttons_frame.pack(fill="both", expand=True)
+
+        self._log_frame = ttk.Frame(self._main_frame)
+        self._log_frame.pack(fill="both", expand=True)
 
         vcmd = (self.root.register(self.validate_input), "%P", "%S", "%d", "%i")
-        self.input = tkinter.Entry(self._frame, width=90)
-        self.input.pack()
+        self.input = tkinter.Entry(self._input_frame, width=300)
+        self.input.pack(padx=10, fill="both", expand=True)
         self.insert_default_value()
         self.input.config(validatecommand=vcmd, validate="key")
 
-        self.submit_button = ttk.Button(self._frame, text="Submit", width=20)
-        self.submit_button.pack(pady=5)
+        self.submit_button = tkinter.Button(self._input_frame, text="SUBMIT", height=2, width=25)
+        self.submit_button.pack(pady=10)
 
-        self._init_table(self._frame)
+        self._init_table(self._table_frame)
 
-        self.delete_button = ttk.Button(self._frame, text="Delete", width=15)
-        self.delete_button.pack(pady=10)
+        self.options_button = ttk.Button(self._buttons_frame, text="SETTINGS", width=15)
+        self.options_button.grid(row=0, column=0, columns=5, padx=10)
 
-        self.text = tkinter.Text(self._frame, width=110)
-        self.text.pack(pady=20)
+        self.edit_button = ttk.Button(self._buttons_frame, text="EDIT", width=15)
+        self.edit_button.grid(row=0, column=6, padx=10)
+
+        self.delete_button = ttk.Button(self._buttons_frame, text="DELETE", width=15)
+        self.delete_button.grid(row=0, column=7, padx=10)
+
+        self.text = tkinter.Text(self._log_frame, width=110)
+        self.text.pack(pady=20, fill="both", expand=True)
 
     def _init_table(self, frame: tkinter.Frame) -> None:
         self._table = ttk.Treeview(frame, columns=list(self._table_columns.keys()), height=20,
@@ -113,7 +149,8 @@ class Window:
         self._table.tag_configure("green", background="honeydew")
         self._table.tag_configure("red", background="mistyrose")
         self._config_table(self._table, self._table_columns)
-        self._table.pack(pady=15)
+        self._table.pack(pady=15, fill="both", expand=True)
+
 
     def _config_table(self, table: ttk.Treeview, columns: Dict[str, int]) -> None:
         table.heading("#0", text="months")
