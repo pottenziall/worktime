@@ -4,13 +4,13 @@ from dataclasses import dataclass, field, fields
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
+_logger = logging.getLogger(__name__)
+
 DEFAULT_WORKDAY_TIMEDELTA = timedelta(hours=8)
 DATE_STRING_PATTERN = "%d.%m.%Y"
 TIME_STRING_PATTERN = "%H:%M"
 DATE_PATTERN = r"\d\d.\d\d.\d\d\d\d"
 TIME_PATTERN = r"\d\d:\d\d"
-
-_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -31,7 +31,7 @@ class WorkDay:
                     if self._check_values(time_marks):
                         self.times.append(time_mark)
                     else:
-                        _logger.error(f"Wrong time_mark passed. Skipped: {time_mark}")
+                        _logger.error(f'Wrong time_mark passed. Skipped: "{time_mark}"')
 
     @property
     def color(self) -> str:
@@ -56,7 +56,7 @@ class WorkDay:
 
     def as_text(self) -> str:
         times = [mark for mark in sorted(self.times)]
-        result = [f'date: {self.date}\n']
+        result = [f"date: {self.date}\n"]
         types = ["work: ", "pause: "]
         current_type = types[1]
         for i in range(len(times) - 1):
@@ -68,7 +68,7 @@ class WorkDay:
         return "".join(result)
 
     def __str__(self):
-        return f"{self.date} {' '.join(sorted(self.times))}"
+        return f'{self.date} {" ".join(sorted(self.times))}'
 
     @classmethod
     def from_string(cls, data_string: str) -> Optional["WorkDay"]:
@@ -80,7 +80,7 @@ class WorkDay:
             return
         found = re.findall(rf"{DATE_PATTERN}|{TIME_PATTERN}", data_string)
         if len(found) != len(data_string.split()):
-            _logger.error(f"'{data_string}' was not recognized completely: {found}")
+            _logger.error(f'"{data_string}" was not recognized completely: "{found}"')
             return
         return WorkDay(found[0], found[1:])
 
@@ -121,13 +121,6 @@ class WorkDay:
             try:
                 datetime.strptime(value, pattern)
             except ValueError:
-                _logger.error(f"Wrong input value: '{value}'")
+                _logger.error(f'Wrong input value: "{value}"')
                 return False
         return True
-
-
-@dataclass
-class DbConfig:
-    path: str
-    default_table: str
-    tables: Dict = field(default_factory=dict)

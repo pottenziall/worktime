@@ -1,17 +1,33 @@
 import logging
 import os
+import json
 import sqlite3
-from typing import List, Optional, Tuple
-
-from constants import DbConfig
+from typing import List, Optional, Tuple, Dict, Any
+from dataclasses import dataclass, field
 
 _logger = logging.getLogger(__name__)
 
 
+@dataclass
+class DbConfig:
+    path: str
+    default_table: str
+    tables: Dict = field(default_factory=dict)
+
+
 class DbRW:
-    def __init__(self, config: DbConfig):
-        self._config = config
-        self._create_connection(config)
+    def __init__(self, config_path: Optional[str] = None) -> None:
+        self._config = self._load_db_config(config_path)
+        self._create_connection(self._config)
+
+    def _load_db_config(self, config_path: Optional[str] = None) -> DbConfig:
+        if config_path is None:
+            config_path = os.path.join(os.getcwd(), "db_config.json")
+        if not os.path.isfile(config_path):
+            _logger.error(f"Db config file not found under '{config_path}'")
+        with open(config_path, encoding='utf8') as json_config:
+            json_config = json.load(json_config)
+        return DbConfig(json_config["path"], json_config["default_table"], json_config["tables"])
 
     def _is_db_new(self) -> bool:
         if not os.path.getsize(self._db_path):
@@ -95,7 +111,7 @@ class DbRW:
         _logger.debug(f"Executing statement: {statement}")
         self._cursor.execute(statement)
         self._connect.commit()
-        _logger.debug(f"Database entry with key {column}={value} has been deleted")
+        _logger.info(f'Db row for key "{column}={value}" has been deleted from "{table}"')
 
 
 if __name__ == '__main__':
