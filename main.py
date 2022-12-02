@@ -1,15 +1,15 @@
 import logging
 import tkinter
 
-from db import DbRW
 from window import Window
 from logging_utils import WidgetLogger
 
 _logger = logging.getLogger("main")
 
 # TODO: select table columns in settings
-# TODO: add vacations
 # TODO: add possibility to write >1 day info on time
+# TODO: display error and warnings at start
+# TODO: path to db in settings
 
 file_handler = logging.FileHandler("worktime.log", "a", encoding="utf-8")
 logging.basicConfig(
@@ -21,10 +21,9 @@ logging.basicConfig(
 
 root = tkinter.Tk()
 root.title("Timely")
-root.geometry("1200x850")
+root.geometry("1310x850")
 
-db = DbRW()
-window = Window(master=root, db=db)
+window = Window(master=root)
 if hasattr(window, "text"):
     text_handler = WidgetLogger(window.text, root)
     logging.getLogger("").addHandler(text_handler)
@@ -32,4 +31,3 @@ _logger.debug("Start application")
 
 root.mainloop()
 _logger.debug("Application closed")
-db.close_all()

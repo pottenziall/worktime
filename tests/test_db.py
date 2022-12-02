@@ -3,7 +3,6 @@ import logging
 import pytest
 
 import constants
-from db import DbRW, Table, WorkDay
 
 _logger = logging.getLogger(__name__)
 
