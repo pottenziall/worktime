@@ -54,10 +54,6 @@ class WorkDay:
             _logger.warning(f'For the date "{date}", time marks will be replaced in db: {utils.time_to_str(self.times, braces=True)} '
                             f'-> {utils.time_to_str(data["times"], braces=True)}')
             self.times = data["times"]
-
-            #raise AssertionError(
-                #f'Not allowed to add time marks to WorkDay with day type '
-               # f'"{self.day_type}" for date: "{utils.datetime_to_str(self.date)}"')
         elif not data.get("day_type", False) and not self.day_type:
             times = set(self.times)
             times.update(data["times"])
@@ -66,9 +62,7 @@ class WorkDay:
                 f'For the date "{date}", existing time marks and new ones are combined. '
                 f'Result: {utils.time_to_str(self.times, braces=True)}')
         else:
-            message = f'Caught unhandled error'
-            _logger.critical(message)
-            raise AssertionError(message)
+            _logger.critical("Caught unhandled error")
 
     @property
     def color(self) -> str:

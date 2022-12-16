@@ -1,16 +1,15 @@
 import datetime
-import re
 import logging
+import re
 import tkinter
 import tkinter.ttk as ttk
 from datetime import date, datetime
 from tkinter import messagebox, scrolledtext
-from typing import Dict, List, Tuple, Optional, Union, Any
+from typing import Dict, List, Optional, Union, Any
 
 import utils
-from constants import DATE_STRING_MASK, WorkDay, DAY_TYPE_KEYWORDS, TIME_STRING_MASK
-from models import session_scope
-from models import Worktime
+from constants import DATE_STRING_MASK, DAY_TYPE_KEYWORDS, TIME_STRING_MASK, WorkDay
+from models import Worktime, session_scope
 
 _logger = logging.getLogger("ui")
 
@@ -23,19 +22,21 @@ TABLE_COLUMNS = {"date": 120, "worktime": 100, "pause": 100, "overtime": 100, "w
 # TODO: edit exist entries
 # TODO: sort column when click on header
 # TODO: undo support
+# TODO: Save settings in json file
+# TODO: minsize for main window
 
 
 class Window:
 
     def __init__(self, master: tkinter.Tk):
         self.root = master
-        self.db = None  # to delete
         self._table_columns = TABLE_COLUMNS
         self._table_focus: Optional[datetime] = None
         self._init_ui(self.root)
         self._fill_table()
 
-    def ask_delete(self, entity: str) -> bool:
+    @staticmethod
+    def ask_delete(entity: str) -> bool:
         return messagebox.askyesno(title="Warning", message=f"Are you sure to delete from database:\n{entity}?")
 
     def insert_data_to_table(self, data: List[Dict]) -> None:
@@ -54,7 +55,6 @@ class Window:
             table_row_iid = f'data{row["week"]}{row["weekday"]}'
             self._table.insert(row["week"], tkinter.END, iid=table_row_iid, values=table_row, tags=row["color"])
             self._table.selection_set(table_row_iid)
-            #self._table.update()
         self._calculate_total_values(days_data)
         if self._table_focus is not None:
             focus_week = self._table_focus.isocalendar()[1]
@@ -114,7 +114,7 @@ class Window:
 
     def _init_ui(self, root: tkinter.Tk) -> None:
         _logger.debug("Building UI")
-        self._main_frame = ttk.LabelFrame(root, text="Input date and time marks, like: 10.10.2022 07:35 15:50")
+        self._main_frame = ttk.LabelFrame(root, text="Input date and time marks")
         self._main_frame.pack(padx=15, pady=15, fill="both", expand=True)
         self._main_frame.rowconfigure(0, weight=1, minsize=150)
         self._main_frame.rowconfigure(1, weight=18, minsize=400)
@@ -179,7 +179,7 @@ class Window:
         value = self.input.get()
         self._submit(value)
 
-    def _submit(self, input_value: str, value_to_remove: Optional[Tuple[str, str]] = None) -> None:
+    def _submit(self, input_value: str) -> None:
         recognized = self._recognize_values(input_value)
         if recognized is None:
             return
@@ -187,8 +187,6 @@ class Window:
         focus_date = recognized.get("date", False)
         if focus_date and focus_date.isocalendar()[2] in [6, 7]:
             _logger.warning(f'The day being filled is a weekend: {focus_date.strftime(DATE_STRING_MASK)}')
-        if value_to_remove is not None:
-            self.db.delete(value_to_remove, "worktime")
         self._table_focus = focus_date
         self._fill_table()
         self.insert_default_value()
@@ -215,8 +213,10 @@ class Window:
                         db_row.day_type = exist_workday.day_type
                     db_row.date = exist_workday.date.toordinal()
                     db_row.times = time_marks
+                    # TODO: Create Worktime method to str class, results
                     _logger.info(f'The row data has been updated in db: '
-                                 f'"{utils.dict_to_str(exist_values)}" -> "{utils.datetime_to_str(str(db_row.date))} {db_row.times} {db_row.day_type}"')
+                                 f'"{utils.dict_to_str(exist_values)}" -> "{utils.datetime_to_str(str(db_row.date))} '
+                                 f'{db_row.times} {db_row.day_type}"')
             elif len(found_in_db) == 0:
                 new_workday = WorkDay(**data)
                 time_marks = utils.time_to_str(new_workday.times)
@@ -243,6 +243,7 @@ class Window:
             self.workdays.append(workday.as_dict())
         self.insert_data_to_table(self.workdays)
 
+    # TODO: Fix problem with deleting
     def _delete_entry(self):
         # TODO: only one askyesno window for many items to delete
         row_values = self.get_selected(datarow_only=True)
@@ -263,13 +264,15 @@ class Window:
         if row_values is None:
             return
         with session_scope() as session:
-            found_in_db = session.query(Worktime).filter(Worktime.date == row_values[0][0]).all()
+            date_to_search = datetime.strptime(row_values[0][0], DATE_STRING_MASK)
+            found_in_db = session.query(Worktime).filter(Worktime.date == date_to_search.toordinal()).all()
             assert len(found_in_db) == 1, f"Wrong number of rows in db for the date: {row_values[0][0]}"
         if not found_in_db:
             _logger.critical(f"Table row data not found in db: {row_values[0][0]}")
             return
         edit_window = EditWindow(root=self.root)
         columns = found_in_db[0].__table__.columns.keys()
+        # TODO: fromordinal date when editing
         values = [str(found_in_db[0].__getattribute__(column)) for column in columns]
 
         value_to_edit = " ".join(values)
@@ -280,7 +283,6 @@ class Window:
             current_date = edit_window.returned_value.split()[0]
             if current_date != previous_date:
                 _logger.error(f"Date editing under developing")
-                #self._submit(edit_window.returned_value, ("date", previous_date))
             else:
                 self._submit(edit_window.returned_value)
         # self.root.wait_visibility(self.root)
@@ -293,7 +295,7 @@ class Window:
 
     @staticmethod
     def _config_table(table: ttk.Treeview, columns: Dict[str, int]) -> None:
-        table.heading("#0", text="months")
+        table.heading("#0", text="month")
         table.column("#0", width=170, anchor=tkinter.CENTER)
         for column, width in columns.items():
             table.column(column, width=width, anchor=tkinter.CENTER)
