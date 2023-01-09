@@ -24,6 +24,17 @@ TABLE_COLUMNS = {"date": 120, "worktime": 100, "pause": 100, "overtime": 100, "w
 # TODO: undo support
 # TODO: Save settings in json file
 # TODO: minsize for main window
+# TODO: load all db data button
+# TODO: edit does not work
+# TODO: deleting does not work
+
+
+def result_to_dict(result: Worktime) -> Dict[str, Any]:
+    result_dict = {}
+    columns = result.__table__.columns.keys()
+    for i, row in result:
+        result_dict[i] = [str(row.__getattribute__(column)) for column in columns]
+    return result_dict
 
 
 class Window:

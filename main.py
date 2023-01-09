@@ -1,8 +1,8 @@
 import logging
 import tkinter
 
-from window import Window
 from logging_utils import WidgetLogger
+from window import Window
 
 _logger = logging.getLogger("main")
 
@@ -10,6 +10,7 @@ _logger = logging.getLogger("main")
 # TODO: add possibility to write >1 day info on time
 # TODO: display error and warnings at start
 # TODO: path to db in settings
+# TODO: focus on Entry at start
 
 file_handler = logging.FileHandler("worktime.log", "a", encoding="utf-8")
 logging.basicConfig(
