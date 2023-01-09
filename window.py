@@ -137,6 +137,7 @@ class Window:
         vcmd = (self.root.register(self.validate_input), "%P", "%S", "%d", "%i")
         self.input = tkinter.Entry(self._input_frame, width=60, font="Arial 19")
         self.input.pack(padx=10, fill="both", expand=True)
+        self.input.focus_set()
         self.input.bind('<Return>', self.click_submit)
         self.insert_default_value()
         self.input.config(validatecommand=vcmd, validate="key")
