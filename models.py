@@ -1,9 +1,9 @@
 import logging
+from contextlib import contextmanager
 
+from sqlalchemy import Column, Text, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import Column, Text, create_engine
-from contextlib import contextmanager
 
 DEFAULT_DB_PATH = "/home/fjr0p1/PycharmProjects/worktime/worktime.db"
 

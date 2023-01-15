@@ -10,7 +10,8 @@ _logger = logging.getLogger("main")
 # TODO: add possibility to write >1 day info on time
 # TODO: display error and warnings at start
 # TODO: path to db in settings
-# TODO: focus on Entry at start
+# TODO: read config at the beginning
+# use subprocess
 
 file_handler = logging.FileHandler("worktime.log", "a", encoding="utf-8")
 logging.basicConfig(
@@ -22,7 +23,8 @@ logging.basicConfig(
 
 root = tkinter.Tk()
 root.title("Timely")
-root.geometry("1310x850")
+root.geometry("1310x900")
+root.minsize(1310, 900)
 
 window = Window(master=root)
 if hasattr(window, "text"):

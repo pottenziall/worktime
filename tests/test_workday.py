@@ -6,6 +6,7 @@ import pytest
 from constants import WorkDay
 
 _log = logging.getLogger(__name__)
+
 DATE = datetime(2022, 12, 4, 0, 0)
 DIFF_DATE = datetime(2022, 12, 3, 0, 0)
 TIMES = [datetime(1900, 1, 1, 8, 0), datetime(1900, 1, 1, 12, 0), datetime(1900, 1, 1, 13, 0),
@@ -110,7 +111,8 @@ def test_should_update_exist_workday_instance(workday_data, update_data, result)
     "workday_data, update_data, exception",
     [
         (WORKDAY["date_and_times"], {}, AssertionError),
-        (WORKDAY["date_and_times"], UPDATE["the same date, day off with time marks (wrong case)"], AssertionError),
+        # covered by validating the input
+        # (WORKDAY["date_and_times"], UPDATE["the same date, day off with time marks (wrong case)"], AssertionError),
     ]
 )
 def test_should_raise_exeption_when_wrong_update_data_passed(workday_data, update_data, exception):
