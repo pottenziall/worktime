@@ -95,7 +95,8 @@ def get_db_table_data(limit: int) -> Optional[List[constants.WorkDay]]:
         return
     for values_set in get_model_values(result):
         workday = constants.WorkDay.from_values(values_set)
-        workdays.append(workday)
+        if workday is not None:
+            workdays.append(workday)
     return workdays
 
 
@@ -300,12 +301,12 @@ class Window:
         selected = {sel: self._table.item(sel, option="values") for sel in select}
         if datarows_only:
             return {sel: val for sel, val in selected.items() if
-                    constants.IidType.from_string("".join(val)) == constants.IidType.DATA}
+                    constants.RowType.from_string("".join(val)) == constants.RowType.DATA}
         return selected
 
     def _edit_table_row(self) -> None:
-        selected = self.get_selected(single_only=True)
-        if selected is None:
+        selected = self.get_selected(single_only=True, datarows_only=True)
+        if not selected:
             return
         _, values = selected.popitem()
         db_row = get_row_from_db(values)[0]

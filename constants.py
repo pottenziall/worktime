@@ -36,18 +36,18 @@ DAY_TYPE_KEYWORDS = {
 TABLE_ROW_TYPES = {"month": r"\w{,8} \d{4}", "data": rf"{DATE_PATTERN}", "week": r"w\d{1,2}", "summary": r"Summary"}
 
 
-class IidType(enum.Enum):
+class RowType(enum.Enum):
     DATA = "data"
     MONTH = "month"
     WEEK = "week"
     SUMMARY = "summary"
 
     @classmethod
-    def from_string(cls, value: str) -> "IidType":
+    def from_string(cls, value: str) -> "RowType":
         for iid_type, pattern in TABLE_ROW_TYPES.items():
             if re.search(pattern, value):
-                return IidType(iid_type)
-        _log.warning(f"The value not recognized: {value}")
+                return RowType(iid_type)
+        _log.warning(f"Row not recognized: {value}")
 
 
 @dataclass
@@ -106,6 +106,14 @@ class WorkDay:
                 time_values = cls._recognize_time_marks(time_values)
                 return WorkDay(date=date_mark, times=time_values)
             elif day_type_values and not time_values:
+                rest_args = cls._recognize_day_type(day_type_values[0])
+                return WorkDay(date=date_mark, **rest_args)
+            elif day_type_values and time_values:
+                times = cls._recognize_time_marks(time_values)
+                for item in DAY_TYPE_KEYWORDS[day_type_values[0]]["times"]:
+                    if item not in times:
+                        _log.error(f"Wrong values passed: {values}")
+                        return
                 rest_args = cls._recognize_day_type(day_type_values[0])
                 return WorkDay(date=date_mark, **rest_args)
             else:
