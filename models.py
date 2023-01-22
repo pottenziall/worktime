@@ -5,7 +5,7 @@ from sqlalchemy import Column, Text, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-DEFAULT_DB_PATH = "/home/fjr0p1/PycharmProjects/worktime/worktime.db"
+DEFAULT_DB_PATH = "/home/fjr0p1/PycharmProjects/worktime/test_worktime.db"
 
 _log = logging.getLogger(__name__)
 Base = declarative_base()

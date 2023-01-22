@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Union
 
 import constants
+from models import Worktime
 
 
 def datetime_to_str(date: Union[datetime, str], braces: bool = False) -> str:
@@ -31,6 +32,11 @@ def dict_to_str(data: Dict[str, Any]) -> str:
         elif key == "day_type":
             string += value
     return string.strip()
+
+
+def get_query_result_values(result: List[Worktime]) -> List[Any]:
+    columns = result[0].__table__.columns.keys() if result else []
+    return [[str(row.__getattribute__(c)) for c in columns] for row in result]
 
 
 if __name__ == '__main__':

@@ -3,7 +3,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Union, Optional
+from typing import Dict, List, Any, Union
 
 import utils
 
@@ -86,11 +86,11 @@ class WorkDay:
         try:
             return [datetime.strptime(value, TIME_STRING_MASK) for value in values]
         except ValueError:
-            _log.exception(f"Wrong time mark values: {values}")
+            _log.exception(f"Incorrect time mark values: {values}")
             raise
 
     @classmethod
-    def from_values(cls, input_values: Union[List, str]) -> Optional["WorkDay"]:
+    def from_values(cls, input_values: Union[List, str]) -> "WorkDay":
         try:
             values = input_values if isinstance(input_values, str) else " ".join(input_values)
 
@@ -112,18 +112,19 @@ class WorkDay:
                 times = cls._recognize_time_marks(time_values)
                 for item in DAY_TYPE_KEYWORDS[day_type_values[0]]["times"]:
                     if item not in times:
-                        _log.error(f"Wrong values passed: {values}")
-                        return
+                        raise ValueError(
+                            f'Inconsistency of input values: the day type "{day_type_values[0]}" does not match time marks: {times}')
                 rest_args = cls._recognize_day_type(day_type_values[0])
                 return WorkDay(date=date_mark, **rest_args)
             else:
                 raise ValueError(f"Input values must include at least one time mark or a day type: {values}")
         except ValueError:
             _log.exception(f'Wrong input values: "{input_values}"')
+            raise
 
     def update(self, data: Dict[str, Any]) -> None:
         date = utils.datetime_to_str(self.date)
-        assert data.get("date", False), f'Data to update must include "date" key: {data}. WorkDay has not updated'
+        assert data.get("date"), f'Data to update must include "date" key: {data}. WorkDay has not updated'
         assert self.date == data["date"], f'Exist WorkDay\'s can\'t be updated with data that has the different date:' \
                                           f' {data["date"]} and {self.date}. WorkDay has not updated'
         if data.get("day_type"):

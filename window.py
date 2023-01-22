@@ -1,15 +1,15 @@
-import datetime
+
 import json
 import logging
 import re
 import tkinter as tk
 from datetime import date, datetime
 from tkinter import messagebox, scrolledtext, ttk
-from typing import Dict, List, Optional, Union, Any, Iterable
+from typing import Dict, List, Optional, Union, Iterable
 
 import constants
 import utils
-from models import Worktime, session_scope
+from models import Worktime, session_scope, DBSession
 
 _log = logging.getLogger("ui")
 
@@ -24,78 +24,65 @@ TABLE_COLUMNS = {"date": 120, "worktime": 100, "pause": 100, "overtime": 100, "w
 # TODO: Save settings in json file
 # TODO: edit does not work
 # TODO: deleting does not work
-
-
-def get_model_values(result: List[Worktime]) -> List[Any]:
-    columns = result[0].__table__.columns.keys()
-    values_sets = []
-    for row in result:
-        values = [str(row.__getattribute__(column)) for column in columns]
-        values_sets.append(values)
-    return values_sets
+# TODO: see selection when click toggle view
 
 
 def submit(input_value: str) -> constants.WorkDay:
     workday = constants.WorkDay.from_values(input_value)
-    if workday is not None:
-        write_to_db(workday)
+    write_data_to_db(workday)
     return workday
 
 
-def update_db_row(session, workday: constants.WorkDay, row_to_update) -> None:
-    values = get_model_values([row_to_update])[0]
+def update_db_row(session: DBSession, new: constants.WorkDay, exist: Worktime) -> None:
+    values = utils.get_query_result_values(result=[exist])[0]
     exist_workday = constants.WorkDay.from_values(values)
-    try:
-        exist_workday.update({k: v for k, v in workday.__dict__.items()})
-        time_marks = utils.time_to_str(exist_workday.times)
-    except AssertionError as e:
-        _log.error(e)
-    else:
-        # TODO: create function to str db_row
-        result = session.query(Worktime).filter(Worktime.date == exist_workday.date.toordinal()).all()
-        if len(result) != 1:
-            _log.critical(f"More than one db entry found for the date: {exist_workday.date}")
-        db_row = result[0]
-        if exist_workday.day_type is not None:
-            db_row.day_type = exist_workday.day_type
-        db_row.date = exist_workday.date.toordinal()
-        db_row.times = time_marks
-        # TODO: Create Worktime method to str class, results
-        # _log.info(f'The row data has been updated in db: '
-        #  f'"{utils.dict_to_str(values)}" -> "{utils.datetime_to_str(str(db_row.date))} '
-        #  f'{db_row.times} {db_row.day_type}"')
+    exist_workday.update({k: v for k, v in new.__dict__.items()})
+    time_marks = utils.time_to_str(data=exist_workday.times)
+    # TODO: create function to str db_row
+    result = session.query(Worktime).filter(Worktime.date == exist_workday.date.toordinal()).all()
+    assert len(result) == 1, f"More than one db entry found for the date: {exist_workday.date}"
+    db_row = result[0]
+    if exist_workday.day_type is not None:
+        db_row.day_type = exist_workday.day_type
+    db_row.date = exist_workday.date.toordinal()
+    db_row.times = time_marks
+    # TODO: Create Worktime method to str class, results
+    # _log.info(f'The row data has been updated in db: '
+    #  f'"{utils.dict_to_str(values)}" -> "{utils.datetime_to_str(str(db_row.date))} '
+    #  f'{db_row.times} {db_row.day_type}"')
 
 
-def add_to_db(session, workday: constants.WorkDay) -> None:
-    time_marks = utils.time_to_str(workday.times)
+def add_to_db(session: DBSession, workday: constants.WorkDay) -> None:
+    time_marks = utils.time_to_str(data=workday.times)
     table_row = Worktime(date=workday.date.toordinal(), times=time_marks, day_type=workday.day_type)
     session.add(table_row)
-    _log.info(f'Data has been written to db: "{workday}"')
 
 
-def write_to_db(workday: constants.WorkDay) -> None:
+def write_data_to_db(workday: constants.WorkDay) -> None:
     with session_scope() as session:
         found_in_db = session.query(Worktime).filter(Worktime.date == workday.date.toordinal()).all()
         if len(found_in_db) == 1:
-            update_db_row(session, workday, found_in_db[0])
+            update_db_row(session=session, new=workday, exist=found_in_db[0])
+            message = f'Db table has been updated with next data: {workday}'
         elif len(found_in_db) == 0:
-            add_to_db(session, workday)
+            add_to_db(session=session, workday=workday)
+            message = f'Data has been written to db: {workday}'
         else:
-            # TODO: improve message
-            _log.critical(
-                f'Wrong number of database rows found with the key "{workday.date.toordinal()}": {found_in_db}')
+            raise AssertionError(f"Only one db row must be found for a date, but found: {len(found_in_db)}")
+    _log.info(message)
 
 
-def get_db_table_data(limit: int) -> Optional[List[constants.WorkDay]]:
-    workdays = []
+def get_db_table_data(limit: int) -> List[constants.WorkDay]:
     with session_scope() as session:
         result = session.query(Worktime).order_by(Worktime.date.desc()).limit(limit).all()
         result = list(reversed(result))
-    if not result:
-        return
-    for values_set in get_model_values(result):
-        workday = constants.WorkDay.from_values(values_set)
-        if workday is not None:
+    workdays = []
+    for values_set in utils.get_query_result_values(result=result):
+        try:
+            workday = constants.WorkDay.from_values(values_set)
+        except Exception:
+            _log.exception(f"Error when trying to create WorkDay instance from values:\n{values_set}\nSkipping")
+        else:
             workdays.append(workday)
     return workdays
 
@@ -109,14 +96,14 @@ def delete_db_rows(rows: Iterable[List]) -> None:
             session.delete(found_in_db[0])
 
 
-def get_row_from_db(row_values: List[str]) -> Optional[List[str]]:
+def get_row_from_db_table(row_values: List[str]) -> Optional[List[str]]:
     with session_scope() as session:
         date_to_search = datetime.strptime(row_values[0], constants.DATE_STRING_MASK)
         found_in_db = session.query(Worktime).filter(Worktime.date == date_to_search.toordinal()).all()
         if not found_in_db:
-            return
+            return None
         assert len(found_in_db) == 1, f"For the date {row_values[0]} found {len(found_in_db)} rows in db"
-        values = get_model_values(found_in_db)
+        values = utils.get_query_result_values(result=found_in_db)
     return values
 
 
@@ -158,25 +145,31 @@ class Window:
                 res = f"{hours}h {minutes}m" if minutes else f"{hours}h"
                 result.append(res)
             self._table.insert(week, tk.END, iid=f"summary{week}", values=result)
-            self._table.see(f'summary{week}')
+        # self._table.see(f'summary{week}')
 
-    def insert_to_table(self, data: List[constants.WorkDay], table: ttk.Treeview) -> List[constants.TableIid]:
+    def insert_to_table(self, workdays: List[constants.WorkDay], table: ttk.Treeview) -> List[constants.TableIid]:
+        if not workdays:
+            _log.warning("No data to fill the table")
+            return []
         self.clear_table(table)
         iids = []
-        days_data = {}
-        exist = set()
-        for workday in data:
+        days_data: Dict = {}
+        for workday in workdays:
             row = workday.as_dict()
-            if row["month"] not in exist:
-                table.insert("", tk.END, iid=row["month"], text=row["month"], open=True)
-            if row["week"] not in exist:
-                table.insert(row["month"], tk.END, iid=row["week"], text=f'w{row["week"]}', open=True)
-                days_data[row["week"]] = []
-            exist.update([row["month"], row["week"]])
+            month_iid = row["month"]
+            if month_iid not in iids:
+                table.insert("", tk.END, iid=month_iid, text=month_iid, open=True)
+                iids.append(month_iid)
+            week_iid = row["week"]
+            if week_iid not in iids:
+                table.insert(month_iid, tk.END, iid=week_iid, text=f'w{week_iid}', open=True)
+                iids.append(week_iid)
+                days_data[week_iid] = []
+            # TODO: change approach
             table_row = [row[key] for key in TABLE_COLUMNS.keys()]
-            days_data[row["week"]].append(table_row[1:-2])
-            table_row_iid = constants.TableIid("data", row["week"], row["weekday"])
-            table.insert(row["week"], tk.END, iid=str(table_row_iid), values=table_row, tags=row["color"])
+            days_data[week_iid].append(table_row[1:-2])
+            table_row_iid = constants.TableIid("data", week_iid, row["weekday"])
+            table.insert(week_iid, tk.END, iid=str(table_row_iid), values=table_row, tags=row["color"])
             iids.append(table_row_iid)
         self._calculate_total_values(days_data)
         table.update()
@@ -184,16 +177,13 @@ class Window:
 
     def _fill_table(self, focus_date: Optional[datetime] = None, limit: int = 10) -> None:
         workdays = get_db_table_data(limit)
-        if workdays is not None:
-            iids = self.insert_to_table(workdays, self._table)
+        iids = self.insert_to_table(workdays, self._table)
+        if iids:
+            focus_iid = iids[-1]
             if focus_date is not None:
-                iid = constants.TableIid("data", focus_date.isocalendar()[1], focus_date.isocalendar()[2])
-            else:
-                iid = iids[-1]
-            self._table.selection_set(str(iid))
-            self._table.see(str(iid.week))
-        else:
-            _log.warning("No data to fill table")
+                focus_iid = constants.TableIid("data", focus_date.isocalendar()[1], focus_date.isocalendar()[2])
+            self._table.selection_set(str(focus_iid))
+            self._table.see(str(focus_iid))
 
     @staticmethod
     def ask_delete(value: str) -> bool:
@@ -246,7 +236,7 @@ class Window:
     @staticmethod
     def _config_table(table: ttk.Treeview, columns_config: Dict[str, int]) -> None:
         table.heading("#0", text="month")
-        table.column("#0", width=170, anchor=tk.CENTER)
+        table.column("#0", width=170, anchor=tk.LEFT)
         for column, width in columns_config.items():
             table.column(column, width=width, anchor=tk.CENTER)
             table.heading(column, text=column, anchor=tk.CENTER)
@@ -285,6 +275,7 @@ class Window:
                 state = table.item(item, "open")
                 state = True if not state else False
             table.item(item, open=state)
+            table.see(item)
 
     def _change_settings(self) -> None:
         settings_window = SettingsWindow(root=self.master)
@@ -297,7 +288,7 @@ class Window:
         select = self._table.selection()
         if single_only and len(select) != 1:
             _log.warning("Please, select one row in table")
-            return
+            return None
         selected = {sel: self._table.item(sel, option="values") for sel in select}
         if datarows_only:
             return {sel: val for sel, val in selected.items() if
@@ -309,7 +300,7 @@ class Window:
         if not selected:
             return
         _, values = selected.popitem()
-        db_row = get_row_from_db(values)[0]
+        db_row = get_row_from_db_table(row_values=values)[0]
         value_to_edit = " ".join(db_row)
 
         edit_window = EditWindow(root=self.master)
@@ -364,13 +355,16 @@ class Window:
         self.text.pack(fill="both", expand=True)
 
     def _submit(self, event=None) -> None:
-        value = self.input.get()
-        workday = submit(value)
-        if hasattr(workday, "date") and workday.date.isocalendar()[2] in [6, 7]:
-            _log.warning(f'The day being filled is a weekend: {workday.date.strftime(constants.DATE_STRING_MASK)}')
-        if workday is not None:
-            self._fill_table(focus_date=workday.date)
-            self.insert_default_value()
+        try:
+            value = self.input.get()
+            workday = submit(value)
+            if hasattr(workday, "date") and workday.date.isocalendar()[2] in [6, 7]:
+                _log.warning(f'The day being filled is a weekend: {workday.date.strftime(constants.DATE_STRING_MASK)}')
+            if workday is not None:
+                self._fill_table(focus_date=workday.date)
+                self.insert_default_value()
+        except Exception:
+            _log.exception("Error:")
 
 
 class ModalWindow:
