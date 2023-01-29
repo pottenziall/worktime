@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 
-import pytest
+import pytest  # type: ignore
 
 from constants import WorkDay
 

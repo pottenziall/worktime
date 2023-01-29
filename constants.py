@@ -3,7 +3,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Union
+from typing import Dict, List, Any, Union, Tuple
 
 import utils
 
@@ -34,6 +34,24 @@ DAY_TYPE_KEYWORDS = {
         "times": [datetime.strptime("08:00", TIME_STRING_MASK), datetime.strptime("16:00", TIME_STRING_MASK)]},
 }
 TABLE_ROW_TYPES = {"month": r"\w{,8} \d{4}", "data": rf"{DATE_PATTERN}", "week": r"w\d{1,2}", "summary": r"Summary"}
+TABLE_COLUMNS: List[Tuple[Any, ...]] = [
+    ("date", 120, "date"),
+    ("worktime", 100, "worktime"),
+    ("pause", 100, "pause"),
+    ("overtime", 100, "overtime"),
+    ("whole_time", 120, "whole time"),
+    ("time_marks", 400, "time marks"),
+    ("day_type", 90, "day type", "w"),
+]
+SUMMARY_COLUMNS = ["worktime", "pause", "overtime", "whole_time"]
+
+
+@dataclass
+class TableColumn:
+    iid: str
+    width: int
+    text: str
+    anchor: str = "center"
 
 
 class RowType(enum.Enum):
@@ -47,25 +65,7 @@ class RowType(enum.Enum):
         for iid_type, pattern in TABLE_ROW_TYPES.items():
             if re.search(pattern, value):
                 return RowType(iid_type)
-        _log.warning(f"Row not recognized: {value}")
-
-
-@dataclass
-class TableIid:
-    word: str
-    week: int
-    weekday: int
-
-    @classmethod
-    def from_str(cls, value: str) -> "TableIid":
-        try:
-            word, week, weekday = value.split("-")
-            return TableIid(word, week, weekday)
-        except Exception:
-            _log.error(f"Parsing the value failed: {value}")
-
-    def __str__(self):
-        return f"{self.word}-{self.week}-{self.weekday}"
+        raise ValueError(f"Row not recognized: {value}")
 
 
 @dataclass
@@ -161,7 +161,7 @@ class WorkDay:
         return "default"
 
     def as_dict(self) -> Dict[str, Any]:
-        data = dict(week=str(self.date.isocalendar()[1]),
+        data = dict(week="week" + " " + str(self.date.isocalendar()[1]),
                     month=self.date.strftime("%B %Y"),
                     date=self.date.strftime(DATE_STRING_MASK),
                     weekday=self.date.isocalendar()[2],

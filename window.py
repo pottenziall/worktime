@@ -1,11 +1,10 @@
-
 import json
 import logging
 import re
 import tkinter as tk
 from datetime import date, datetime
 from tkinter import messagebox, scrolledtext, ttk
-from typing import Dict, List, Optional, Union, Iterable
+from typing import Dict, List, Optional, Union, Iterable, Tuple, Any
 
 import constants
 import utils
@@ -14,8 +13,6 @@ from models import Worktime, session_scope, DBSession
 _log = logging.getLogger("ui")
 
 DEFAULT_INPUT_VALUE = str(date.today().strftime(constants.DATE_STRING_MASK))
-TABLE_COLUMNS = {"date": 120, "worktime": 100, "pause": 100, "overtime": 100, "whole_time": 120, "time_marks": 400,
-                 "day_type": 90}
 
 
 # TODO: settings: change font size
@@ -23,8 +20,16 @@ TABLE_COLUMNS = {"date": 120, "worktime": 100, "pause": 100, "overtime": 100, "w
 # TODO: undo support
 # TODO: Save settings in json file
 # TODO: edit does not work
-# TODO: deleting does not work
+# TODO: deleting does not work (row data only)
 # TODO: see selection when click toggle view
+
+
+def get_table_columns(column_params: List[Tuple[Any, ...]]) -> List[constants.TableColumn]:
+    try:
+        return [constants.TableColumn(*params) for params in column_params]
+    except Exception:
+        _log.exception(f"Not possible to get table columns. Wrong input values: {column_params}")
+        raise
 
 
 def submit(input_value: str) -> constants.WorkDay:
@@ -76,12 +81,14 @@ def get_db_table_data(limit: int) -> List[constants.WorkDay]:
     with session_scope() as session:
         result = session.query(Worktime).order_by(Worktime.date.desc()).limit(limit).all()
         result = list(reversed(result))
+    if not result:
+        _log.warning("No data received from the database")
     workdays = []
     for values_set in utils.get_query_result_values(result=result):
         try:
             workday = constants.WorkDay.from_values(values_set)
         except Exception:
-            _log.exception(f"Error when trying to create WorkDay instance from values:\n{values_set}\nSkipping")
+            _log.exception(f"Failed to create WorkDay instance from values:\n{values_set}\nSkipping")
         else:
             workdays.append(workday)
     return workdays
@@ -130,60 +137,104 @@ class Window:
 
     def __init__(self, master: tk.Tk):
         self.master = master
+        self._table_columns = get_table_columns(constants.TABLE_COLUMNS)
         self._init_ui()
-        self._fill_table()
+        self._do_checks_and_fill_table(self._table)
 
-    def _calculate_total_values(self, days_data: Dict[str, List]) -> None:
-        for week, data_sets in days_data.items():
+    def _check_values_compatibility(self, workday: constants.WorkDay) -> bool:
+        values_to_check = [column.iid for column in self._table_columns]
+        values_to_check.append("color")
+        workday_values = workday.as_dict()
+        for value in values_to_check:
+            if value not in workday_values:
+                _log.critical(
+                    f"""Table has "{value}" column but WorkDay (db) doesn't provide a value for that.
+                    WorkDay values: {workday_values.keys()}"""
+                )
+                return False
+        return True
+
+    def _do_checks_and_fill_table(self, table: ttk.Treeview) -> None:
+        """Checks that WorkDay (db) contains all the data needed to fill the table.
+        Fills the table in case of successful verification"""
+        workdays = get_db_table_data(limit=1)
+        if workdays:
+            if self._check_values_compatibility(workdays[0]):
+                self._fill_table(table)
+        else:
+            _log.warning("No data received from the database")
+
+    def _insert_summaries(self, table: ttk.Treeview, target: str, columns: List[str], values: List[Dict]) -> None:
+        summary_targets = {row_values[target] for row_values in values}
+        summaries: Dict[str, List] = {summary_target: [] for summary_target in summary_targets}
+        for row_values in values:
+            summary_values = [row_values[column] for column in columns]
+            summaries[row_values[target]].append(summary_values)
+
+        for week, summary in summaries.items():
             result = ["Summary:"]
-            for i in range(len(data_sets[0])):
-                s = data_sets[0][i]
-                for item in data_sets[1:]:
+            for i in range(len(summary[0])):
+                s = summary[0][i]
+                for item in summary[1:]:
                     s += item[i]
                 hours, remainder = divmod(int(s.total_seconds()), 3600)
                 minutes, seconds = divmod(remainder, 60)
                 res = f"{hours}h {minutes}m" if minutes else f"{hours}h"
                 result.append(res)
-            self._table.insert(week, tk.END, iid=f"summary{week}", values=result)
-        # self._table.see(f'summary{week}')
-
-    def insert_to_table(self, workdays: List[constants.WorkDay], table: ttk.Treeview) -> List[constants.TableIid]:
-        if not workdays:
-            _log.warning("No data to fill the table")
-            return []
-        self.clear_table(table)
-        iids = []
-        days_data: Dict = {}
-        for workday in workdays:
-            row = workday.as_dict()
-            month_iid = row["month"]
-            if month_iid not in iids:
-                table.insert("", tk.END, iid=month_iid, text=month_iid, open=True)
-                iids.append(month_iid)
-            week_iid = row["week"]
-            if week_iid not in iids:
-                table.insert(month_iid, tk.END, iid=week_iid, text=f'w{week_iid}', open=True)
-                iids.append(week_iid)
-                days_data[week_iid] = []
-            # TODO: change approach
-            table_row = [row[key] for key in TABLE_COLUMNS.keys()]
-            days_data[week_iid].append(table_row[1:-2])
-            table_row_iid = constants.TableIid("data", week_iid, row["weekday"])
-            table.insert(week_iid, tk.END, iid=str(table_row_iid), values=table_row, tags=row["color"])
-            iids.append(table_row_iid)
-        self._calculate_total_values(days_data)
+            table.insert(week, tk.END, iid=f"summary{week}", values=result)
         table.update()
-        return iids
 
-    def _fill_table(self, focus_date: Optional[datetime] = None, limit: int = 10) -> None:
+    def _insert_to_table(self, table: ttk.Treeview, parents: List[str], rows_values: List[Dict]) -> None:
+        self.clear_table(table)
+        columns = table.config("columns")[-1]
+        try:
+            for i, key in enumerate(parents):
+                parent_key = parents[i - 1] if i > 0 else ""
+                for j, row_values in enumerate(rows_values):
+                    item = row_values[key]
+                    parent = row_values[parent_key] if parent_key else ""
+                    if not table.exists(item):
+                        table.insert(parent, tk.END, iid=item, text=item, open=True)
+
+                    if key == parents[-1]:
+                        values = [row_values[column] for column in columns]
+                        table.insert(item, tk.END, iid=values[0], values=values, open=True, tags=row_values["color"])
+                table.update()
+        except Exception:
+            _log.exception("Failed to fill the table")
+            self.clear_table(table)
+
+    def _fill_table(self, table: ttk.Treeview, focus_date: Optional[datetime] = None, limit: int = 10) -> None:
         workdays = get_db_table_data(limit)
-        iids = self.insert_to_table(workdays, self._table)
-        if iids:
-            focus_iid = iids[-1]
-            if focus_date is not None:
-                focus_iid = constants.TableIid("data", focus_date.isocalendar()[1], focus_date.isocalendar()[2])
-            self._table.selection_set(str(focus_iid))
-            self._table.see(str(focus_iid))
+        if not workdays:
+            _log.warning("No data received for filling the table")
+            return
+        workdays_dict_values = [workday.as_dict() for workday in workdays]
+        self._insert_to_table(table=self._table, parents=["month", "week"], rows_values=workdays_dict_values)
+        self._insert_summaries(table=self._table, target="week", columns=constants.SUMMARY_COLUMNS,
+                               values=workdays_dict_values)
+        _log.debug(f"Number of db rows that loaded into the table: {len(workdays)}, limit: {limit}")
+        if focus_date is not None:
+            focus_item = utils.datetime_to_str(focus_date)
+            self._set_table_focus(table, focus_item)
+        else:
+            self._set_table_focus(table)
+
+    def _set_table_focus(self, table: ttk.Treeview, focus_item: Optional[str] = None) -> None:
+        if focus_item and not table.exists(focus_item):
+            _log.warning(f"Item to be focused does not exist in the table: {focus_item}")
+            focus_item = table.get_children()[-1]
+        else:
+            focus_item = self._get_last_table_item(table)
+        self._table.selection_set(focus_item)
+        self._table.see(focus_item)
+
+    def _get_last_table_item(self, table: ttk.Treeview, item: str = "") -> str:
+        children = self._table.get_children(item)
+        if children:
+            return self._get_last_table_item(table, children[-1])
+        else:
+            return item
 
     @staticmethod
     def ask_delete(value: str) -> bool:
@@ -234,18 +285,18 @@ class Window:
         self.submit_button.pack(pady=20, ipady=20)
 
     @staticmethod
-    def _config_table(table: ttk.Treeview, columns_config: Dict[str, int]) -> None:
-        table.heading("#0", text="month")
-        table.column("#0", width=170, anchor=tk.LEFT)
-        for column, width in columns_config.items():
-            table.column(column, width=width, anchor=tk.CENTER)
-            table.heading(column, text=column, anchor=tk.CENTER)
+    def _config_table(table: ttk.Treeview, columns: List[constants.TableColumn]) -> None:
+        # table.heading("#0", text="month")
+        table.column("#0", width=170, anchor=tk.W)
+        for column in columns:
+            table.column(column.iid, width=column.width, anchor=column.anchor)
+            table.heading(column.iid, text=column.text, anchor=column.anchor)
 
-    def _init_table(self, master: tk.Frame) -> None:
+    def _init_table(self, master: ttk.Frame) -> None:
         style = ttk.Style()
         style.configure("Treeview", rowheight=22, font=('Calibri', 11))
 
-        self._table = ttk.Treeview(master, columns=list(TABLE_COLUMNS.keys()), height=20, style="Treeview",
+        self._table = ttk.Treeview(master, columns=[c.iid for c in self._table_columns], height=20, style="Treeview",
                                    show=["tree", "headings"])
         y = ttk.Scrollbar(master, orient="vertical", command=self._table.yview)
         y.pack(side="right", fill="y")
@@ -254,7 +305,7 @@ class Window:
         self._table.tag_configure("default", background="white")
         self._table.tag_configure("green", background="honeydew")
         self._table.tag_configure("red", background="mistyrose")
-        self._config_table(table=self._table, columns_config=TABLE_COLUMNS)
+        self._config_table(table=self._table, columns=self._table_columns)
         self._table.pack(fill="both", expand=True)
         y.config(command=self._table.yview)
 
@@ -265,17 +316,17 @@ class Window:
         self._init_table(frame)
 
     def _load_all_db_data(self) -> None:
-        self._fill_table(limit=10000)
+        self._fill_table(self._table, limit=10000)
 
-    @staticmethod
-    def _toggle_table_view(table: ttk.Treeview) -> None:
+    def _toggle_table_view(self, table: ttk.Treeview) -> None:
         state = None
         for item in table.get_children():
             if state is None:
                 state = table.item(item, "open")
                 state = True if not state else False
             table.item(item, open=state)
-            table.see(item)
+        if state:
+            self._set_table_focus(table)
 
     def _change_settings(self) -> None:
         settings_window = SettingsWindow(root=self.master)
@@ -292,7 +343,8 @@ class Window:
         selected = {sel: self._table.item(sel, option="values") for sel in select}
         if datarows_only:
             return {sel: val for sel, val in selected.items() if
-                    constants.RowType.from_string("".join(val)) == constants.RowType.DATA}
+                    constants.RowType.from_string("".join(val)) == constants.RowType.DATA
+                    }
         return selected
 
     def _edit_table_row(self) -> None:
@@ -316,7 +368,7 @@ class Window:
         _log.debug("Value has not changed")
         # self.root.wait_visibility(self.root)
 
-    def _delete_table_rows(self):
+    def _delete_table_rows(self, table: ttk.Treeview):
         selected = self.get_selected(datarows_only=True)
         if selected is not None:
             # message = f"[{utils.datetime_to_str(found_in_db[0].date)}, {utils.time_to_str(found_in_db[0].times)}]"
@@ -325,7 +377,7 @@ class Window:
                 return
             delete_db_rows(selected.values())
             _log.debug(f"Db rows deleted successfully:{''.join(values)}")
-            self._fill_table()
+            self._fill_table(table)
 
     def _init_buttons_staff(self, master: ttk.LabelFrame) -> None:
         frame = ttk.Frame(master)
@@ -344,7 +396,8 @@ class Window:
         self.edit_button = ttk.Button(frame, text="EDIT", width=15, command=self._edit_table_row)
         self.edit_button.grid(row=0, column=3, padx=10)
 
-        self.delete_button = ttk.Button(frame, text="DELETE", width=15, command=self._delete_table_rows)
+        self.delete_button = ttk.Button(frame, text="DELETE", width=15,
+                                        command=lambda: self._delete_table_rows(self._table))
         self.delete_button.grid(row=0, column=4, padx=10)
 
     def _init_log_staff(self, master: ttk.LabelFrame) -> None:
@@ -361,7 +414,7 @@ class Window:
             if hasattr(workday, "date") and workday.date.isocalendar()[2] in [6, 7]:
                 _log.warning(f'The day being filled is a weekend: {workday.date.strftime(constants.DATE_STRING_MASK)}')
             if workday is not None:
-                self._fill_table(focus_date=workday.date)
+                self._fill_table(self._table, focus_date=workday.date)
                 self.insert_default_value()
         except Exception:
             _log.exception("Error:")

@@ -11,9 +11,10 @@ _logger = logging.getLogger("main")
 # TODO: display error and warnings at start
 # TODO: path to db in settings
 # TODO: read config at the beginning
-# use subprocess
+# TODO: use subprocess
 
-file_handler = logging.FileHandler("worktime.log", "a", encoding="utf-8")
+LOG_FILENAME = "worktime.log"
+file_handler = logging.FileHandler(LOG_FILENAME, "a", encoding="utf-8")
 logging.basicConfig(
     format="%(asctime)s_%(levelname)s:%(name)s:%(lineno)d:%(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",

@@ -35,6 +35,8 @@ def dict_to_str(data: Dict[str, Any]) -> str:
 
 
 def get_query_result_values(result: List[Worktime]) -> List[Any]:
+    if not result:
+        return []
     columns = result[0].__table__.columns.keys() if result else []
     return [[str(row.__getattribute__(c)) for c in columns] for row in result]
 
