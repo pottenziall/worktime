@@ -12,6 +12,7 @@ _logger = logging.getLogger("main")
 # TODO: path to db in settings
 # TODO: read config at the beginning
 # TODO: use subprocess
+# TODO: Load all -> update just loaded item -> Item to be focused does not exist in the table: 22.07.2022
 
 LOG_FILENAME = "worktime.log"
 file_handler = logging.FileHandler(LOG_FILENAME, "a", encoding="utf-8")

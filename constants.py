@@ -2,7 +2,7 @@ import enum
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date, time
 from typing import Dict, List, Any, Union, Tuple
 
 import utils
@@ -11,6 +11,7 @@ _log = logging.getLogger(__name__)
 
 CONFIG_FILE_PATH = "/home/fjr0p1/PycharmProjects/worktime/config.json"
 DEFAULT_WORKDAY_TIMEDELTA = timedelta(hours=8)
+ANY_DATE = date(2023, 1, 1)
 DATE_STRING_MASK = "%d.%m.%Y"
 TIME_STRING_MASK = "%H:%M"
 DATE_PATTERN = r"\d\d.\d\d.\d\d\d\d"
@@ -19,7 +20,8 @@ TIME_PATTERN = r"\d\d:\d\d"
 DAY_TYPE_KEYWORDS = {
     "vacation": {
         "day_type": "vacation",
-        "times": [datetime.strptime("08:00", TIME_STRING_MASK), datetime.strptime("16:00", TIME_STRING_MASK)]},
+        "times": [datetime.strptime("08:00", TIME_STRING_MASK).time(),
+                  datetime.strptime("16:00", TIME_STRING_MASK).time()]},
     "off": {
         "day_type": "day off",
         "times": []},
@@ -28,10 +30,12 @@ DAY_TYPE_KEYWORDS = {
         "times": []},
     "sick": {
         "day_type": "sick leave",
-        "times": [datetime.strptime("08:00", TIME_STRING_MASK), datetime.strptime("16:00", TIME_STRING_MASK)]},
+        "times": [datetime.strptime("08:00", TIME_STRING_MASK).time(),
+                  datetime.strptime("16:00", TIME_STRING_MASK).time()]},
     "holiday": {
         "day_type": "holiday",
-        "times": [datetime.strptime("08:00", TIME_STRING_MASK), datetime.strptime("16:00", TIME_STRING_MASK)]},
+        "times": [datetime.strptime("08:00", TIME_STRING_MASK).time(),
+                  datetime.strptime("16:00", TIME_STRING_MASK).time()]},
 }
 TABLE_ROW_TYPES = {"month": r"\w{,8} \d{4}", "data": rf"{DATE_PATTERN}", "week": r"w\d{1,2}", "summary": r"Summary"}
 TABLE_COLUMNS: List[Tuple[Any, ...]] = [
@@ -39,7 +43,7 @@ TABLE_COLUMNS: List[Tuple[Any, ...]] = [
     ("worktime", 100, "worktime"),
     ("pause", 100, "pause"),
     ("overtime", 100, "overtime"),
-    ("whole_time", 120, "whole time"),
+   # ("whole_time", 120, "whole time"),
     ("time_marks", 400, "time marks"),
     ("day_type", 90, "day type", "w"),
 ]
@@ -70,8 +74,8 @@ class RowType(enum.Enum):
 
 @dataclass
 class WorkDay:
-    date: datetime
-    times: List[datetime] = field(default_factory=list)
+    date: date
+    times: List[time] = field(default_factory=list)
     day_type: str = ""
 
     @staticmethod
@@ -82,9 +86,10 @@ class WorkDay:
         raise ValueError(f"Day type not recognized: {value_str}")
 
     @staticmethod
-    def _recognize_time_marks(values: List[str]) -> List[datetime]:
+    def _recognize_time_marks(values: List[str]) -> List[time]:
         try:
-            return [datetime.strptime(value, TIME_STRING_MASK) for value in values]
+            marks = {datetime.strptime(value, TIME_STRING_MASK).time() for value in values}
+            return list(sorted(marks))
         except ValueError:
             _log.exception(f"Incorrect time mark values: {values}")
             raise
@@ -96,9 +101,9 @@ class WorkDay:
 
             date_values = re.findall(f"{DATE_PATTERN}|{ORDINAL_DATE_PATTERN}", values)
             if len(date_values) != 1:
-                raise ValueError(f"Input value must include one date mark, found {len(date_values)}: {date_values}")
-            date_mark = datetime.strptime(date_values[0], DATE_STRING_MASK) if len(
-                date_values[0]) == 10 else datetime.fromordinal(int(date_values[0]))
+                raise ValueError(f"Input value must include one date mark. Found {len(date_values)}: {date_values}")
+            date_mark = datetime.strptime(date_values[0], DATE_STRING_MASK).date() if len(
+                date_values[0]) == 10 else datetime.fromordinal(int(date_values[0])).date()
 
             time_values = re.findall(TIME_PATTERN, values)
             day_type_values = re.findall("|".join(DAY_TYPE_KEYWORDS.keys()), values)
@@ -123,20 +128,20 @@ class WorkDay:
             raise
 
     def update(self, data: Dict[str, Any]) -> None:
-        date = utils.datetime_to_str(self.date)
+        date_instance = utils.date_to_str(self.date)
         assert data.get("date"), f'Data to update must include "date" key: {data}. WorkDay has not updated'
         assert self.date == data["date"], f'Exist WorkDay\'s can\'t be updated with data that has the different date:' \
                                           f' {data["date"]} and {self.date}. WorkDay has not updated'
         if data.get("day_type"):
             _log.warning(
-                f'For the date "{date}", time marks will be replaced in db because the new "{data["day_type"]}" day type'
+                f'For the date "{date_instance}", time marks will be replaced in db because the new "{data["day_type"]}" day type'
                 f' received: {utils.time_to_str(self.times, braces=True)} -> {utils.time_to_str(data["times"], braces=True)}')
             self.times = data["times"]
             self.day_type = data["day_type"]
         elif not data.get("day_type", False) and self.day_type:
             self.day_type = ""
             _log.warning(
-                f'For the date "{date}", time marks will be replaced in db: {utils.time_to_str(self.times, braces=True)} '
+                f'For the date "{date_instance}", time marks will be replaced in db: {utils.time_to_str(self.times, braces=True)} '
                 f'-> {utils.time_to_str(data["times"], braces=True)}')
             self.times = data["times"]
         elif not data.get("day_type", False) and not self.day_type:
@@ -144,7 +149,7 @@ class WorkDay:
             times.update(data["times"])
             self.times = sorted(list(times))
             _log.debug(
-                f'For the date "{date}", existing time marks and new ones are combined. '
+                f'For the date "{date_instance}", existing time marks and new ones are combined. '
                 f'Result: {utils.time_to_str(self.times, braces=True)}')
         else:
             _log.critical("Caught unhandled error")
@@ -185,7 +190,8 @@ class WorkDay:
     def whole_time(self) -> timedelta:
         if len(self.times) < 2:
             return timedelta(0)
-        return self.times[-1] - self.times[0]
+        diff = datetime.combine(ANY_DATE, self.times[-1]) - datetime.combine(ANY_DATE, self.times[0])
+        return diff
 
     @property
     def pauses(self) -> timedelta:
@@ -193,7 +199,7 @@ class WorkDay:
             return timedelta(0)
         pauses = timedelta(seconds=0)
         for i in range(1, len(self.times) - 1, 2):
-            pause = self.times[i + 1] - self.times[i]
+            pause = datetime.combine(ANY_DATE, self.times[i + 1]) - datetime.combine(ANY_DATE, self.times[i])
             pauses += pause
         return pauses
 

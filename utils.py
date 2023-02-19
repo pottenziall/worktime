@@ -1,22 +1,23 @@
-from datetime import datetime
+from datetime import datetime, date, time
 from typing import List, Dict, Any, Union
 
 import constants
 from models import Worktime
 
 
-def datetime_to_str(date: Union[datetime, str], braces: bool = False) -> str:
+def date_to_str(date_instance: Union[date, str], braces: bool = False) -> str:
     try:
         if isinstance(date, str):
-            date = datetime.fromordinal(int(date))
-        mark = date.strftime(constants.DATE_STRING_MASK)
+            date_instance = datetime.fromordinal(int(date))
+        assert isinstance(date_instance, date)
+        mark = date_instance.strftime(constants.DATE_STRING_MASK)
     except ValueError:
         mark = "<WRONG>"
     return f'[{mark}]' if braces else mark
 
 
-def time_to_str(data: List[datetime], braces: bool = False) -> str:
-    marks = [item.strftime(constants.TIME_STRING_MASK) for item in data]
+def time_to_str(time_instances: List[time], braces: bool = False) -> str:
+    marks = [item.strftime(constants.TIME_STRING_MASK) for item in time_instances]
     return f'[{" ".join(marks)}]' if braces else " ".join(marks)
 
 
@@ -42,10 +43,4 @@ def get_query_result_values(result: List[Worktime]) -> List[Any]:
 
 
 if __name__ == '__main__':
-    res = dict_to_str(
-        {"date": datetime(1900, 1, 1, 8, 0),
-         "times": [datetime(1900, 1, 1, 12, 30), datetime(1900, 1, 1, 12, 40)],
-         "day_type": "vacation"
-         }
-    )
-    print(res)
+    pass

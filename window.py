@@ -42,7 +42,7 @@ def update_db_row(session: DBSession, new: constants.WorkDay, exist: Worktime) -
     values = utils.get_query_result_values(result=[exist])[0]
     exist_workday = constants.WorkDay.from_values(values)
     exist_workday.update({k: v for k, v in new.__dict__.items()})
-    time_marks = utils.time_to_str(data=exist_workday.times)
+    time_marks = utils.time_to_str(time_instances=exist_workday.times)
     # TODO: create function to str db_row
     result = session.query(Worktime).filter(Worktime.date == exist_workday.date.toordinal()).all()
     assert len(result) == 1, f"More than one db entry found for the date: {exist_workday.date}"
@@ -58,7 +58,7 @@ def update_db_row(session: DBSession, new: constants.WorkDay, exist: Worktime) -
 
 
 def add_to_db(session: DBSession, workday: constants.WorkDay) -> None:
-    time_marks = utils.time_to_str(data=workday.times)
+    time_marks = utils.time_to_str(time_instances=workday.times)
     table_row = Worktime(date=workday.date.toordinal(), times=time_marks, day_type=workday.day_type)
     session.add(table_row)
 
@@ -68,10 +68,10 @@ def write_data_to_db(workday: constants.WorkDay) -> None:
         found_in_db = session.query(Worktime).filter(Worktime.date == workday.date.toordinal()).all()
         if len(found_in_db) == 1:
             update_db_row(session=session, new=workday, exist=found_in_db[0])
-            message = f'Db table has been updated with next data: {workday}'
+            message = f'Db table has updated with the data: {workday}'
         elif len(found_in_db) == 0:
             add_to_db(session=session, workday=workday)
-            message = f'Data has been written to db: {workday}'
+            message = f'Data has written to db: {workday}'
         else:
             raise AssertionError(f"Only one db row must be found for a date, but found: {len(found_in_db)}")
     _log.info(message)
@@ -204,7 +204,7 @@ class Window:
             _log.exception("Failed to fill the table")
             self.clear_table(table)
 
-    def _fill_table(self, table: ttk.Treeview, focus_date: Optional[datetime] = None, limit: int = 10) -> None:
+    def _fill_table(self, table: ttk.Treeview, focus_date: Optional[date] = None, limit: int = 10) -> None:
         workdays = get_db_table_data(limit)
         if not workdays:
             _log.warning("No data received for filling the table")
@@ -213,9 +213,9 @@ class Window:
         self._insert_to_table(table=self._table, parents=["month", "week"], rows_values=workdays_dict_values)
         self._insert_summaries(table=self._table, target="week", columns=constants.SUMMARY_COLUMNS,
                                values=workdays_dict_values)
-        _log.debug(f"Number of db rows that loaded into the table: {len(workdays)}, limit: {limit}")
+        _log.debug(f"Number of db rows loaded into the table: {len(workdays)}, limit: {limit}")
         if focus_date is not None:
-            focus_item = utils.datetime_to_str(focus_date)
+            focus_item = utils.date_to_str(focus_date)
             self._set_table_focus(table, focus_item)
         else:
             self._set_table_focus(table)
