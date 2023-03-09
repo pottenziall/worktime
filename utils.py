@@ -13,7 +13,7 @@ def date_to_str(date_instance: Union[date, str], braces: bool = False) -> str:
         mark = date_instance.strftime(constants.DATE_STRING_MASK)
     except ValueError:
         mark = "<WRONG>"
-    return f'[{mark}]' if braces else mark
+    return f"[{mark}]" if braces else mark
 
 
 def time_to_str(time_instances: List[time], braces: bool = False) -> str:
@@ -42,5 +42,5 @@ def get_query_result_values(result: List[Worktime]) -> List[Any]:
     return [[str(row.__getattribute__(c)) for c in columns] for row in result]
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pass

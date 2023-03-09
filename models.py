@@ -20,7 +20,7 @@ class Worktime(Base):
 
 
 # TODO: add sqlalchemy echo to the settings window
-main_engine = create_engine(f"sqlite:///{DEFAULT_DB_PATH}")#, echo=True)
+main_engine = create_engine(f"sqlite:///{DEFAULT_DB_PATH}")  # , echo=True)
 Base.metadata.create_all(main_engine)
 DBSession = sessionmaker(binds={Base: main_engine}, expire_on_commit=False)
 
