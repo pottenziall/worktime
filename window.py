@@ -427,8 +427,11 @@ class Window:
         if not selected:
             return
         _, values = selected.popitem()
-        db_row = get_row_from_db_table(row_values=values)[0]
-        value_to_edit = " ".join(db_row)
+        db_row = get_row_from_db_table(row_values=values)
+        # TODO: Manage case when db_row is None
+        if db_row is None:
+            raise RuntimeError("No rows to edit")
+        value_to_edit = " ".join(db_row[0])
 
         edit_window = EditWindow(root=self.master)
         edit_window.insert_to_entry(value_to_edit)

@@ -17,7 +17,7 @@ TIME_STRING_MASK = "%H:%M"
 DATE_PATTERN = r"\d\d.\d\d.\d\d\d\d"
 ORDINAL_DATE_PATTERN = r"\d{6}"
 TIME_PATTERN = r"\d\d:\d\d"
-DAY_TYPE_KEYWORDS = {
+DAY_TYPE_KEYWORDS: Dict[str, Any] = {
     "vacation": {
         "day_type": "vacation",
         "times": [
@@ -139,7 +139,8 @@ class WorkDay:
                 for item in DAY_TYPE_KEYWORDS[day_type_values[0]]["times"]:
                     if item not in times:
                         raise ValueError(
-                            f'Inconsistency of input values: the day type "{day_type_values[0]}" does not match time marks: {times}'
+                            f'Inconsistency of input values: the day type "{day_type_values[0]}" does not match time '
+                            f"marks: {times}"
                         )
                 rest_args = cls._recognize_day_type(day_type_values[0])
                 return WorkDay(date=date_mark, **rest_args)
@@ -162,7 +163,7 @@ class WorkDay:
         )
         if data.get("day_type"):
             _log.warning(
-                f'For the date "{date_instance}", time marks will be replaced in db because the new "{data["day_type"]}" day type'
+                f'For "{date_instance}", time marks will be replaced in db because the new "{data["day_type"]}" day type'
                 f' received: {utils.time_to_str(self.times, braces=True)} -> {utils.time_to_str(data["times"], braces=True)}'
             )
             self.times = data["times"]
@@ -170,7 +171,7 @@ class WorkDay:
         elif not data.get("day_type", False) and self.day_type:
             self.day_type = ""
             _log.warning(
-                f'For the date "{date_instance}", time marks will be replaced in db: {utils.time_to_str(self.times, braces=True)} '
+                f'For the date "{date_instance}", time marks will be replaced in db: {utils.time_to_str(self.times, braces=True)}'
                 f'-> {utils.time_to_str(data["times"], braces=True)}'
             )
             self.times = data["times"]

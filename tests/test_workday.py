@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timedelta, date, time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 import pytest  # type: ignore
 
@@ -20,18 +20,6 @@ TIMES = {
     "sick leave": [time(8), time(16)],
     "day off": [],
 }
-INPUT_VALUES = {
-    "04.12.2022 vacation": [DATE_1, TIMES_5, "vacation"],
-    "04.12.2022  08:00 12:00 13:00 18:00": [DATE_1, TIMES_1, ""],
-    "04.12.2022 08:00 12:00 13:00 18:00": [DATE_1, TIMES_1, ""],
-    "04.12.2022 18:00 18:00": [DATE_1, [time(18)], ""],
-}
-WRONG_INPUT_VALUES = [
-    "08:00",
-    "04.12.2022",
-    "34.12.2022 08:00",
-    "04.12.2022 28:00",
-]
 
 WORKDAY_WITH_DATE_AND_TIMES = {
     "date": DATE_1,
@@ -115,12 +103,25 @@ UPDATE_DATA = [
 WRONG_UPDATE_DATA = [UPDATE_WITHOUT_DATE_WRONG_CASE, UPDATE_WITH_DIFF_DATE_WRONG_CASE]
 
 
-@pytest.fixture(scope="function", params=INPUT_VALUES.items())
-def input_values(request) -> Dict[str, List[Any]]:
+@pytest.fixture(
+    scope="function",
+    params=[
+        ("04.12.2022 vacation", DATE_1, TIMES_5, "vacation"),
+        ("04.12.2022  08:00 12:00 13:00 18:00", DATE_1, TIMES_1, ""),
+        ("04.12.2022 08:00 12:00 13:00 18:00", DATE_1, TIMES_1, ""),
+        ("04.12.2022 18:00 18:00", DATE_1, [time(18)], ""),
+    ],
+)
+def input_values(request) -> Tuple[str, date, List[time], str]:
     return request.param
 
 
-@pytest.fixture(scope="function", params=WRONG_INPUT_VALUES)
+@pytest.fixture(scope="function", params=[
+    "08:00",
+    "04.12.2022",
+    "34.12.2022 08:00",
+    "04.12.2022 28:00",
+])
 def wrong_input_values(request) -> str:
     return request.param
 
@@ -160,11 +161,11 @@ class TestCreateWorkday:
     #        WorkDay(**wrong_workday_data)
 
     def test_should_create_workday_from_string(
-            self, input_values: Dict[str, List[Any]]
+            self, input_values: Tuple[str, date, List[time], str]
     ) -> None:
-        input_string, (date, times, day_type) = input_values
+        input_string, date_ins, times, day_type = input_values
         w = WorkDay.from_values(input_string)
-        assert w.date == date
+        assert w.date == date_ins
         assert w.times == times
         assert w.day_type == day_type
 
