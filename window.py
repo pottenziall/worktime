@@ -2,9 +2,10 @@ import json
 import logging
 import re
 import tkinter as tk
+from dataclasses import dataclass
 from datetime import date, datetime
 from tkinter import messagebox, scrolledtext, ttk
-from typing import Dict, List, Optional, Union, Iterable, Tuple, Any
+from typing import Dict, List, Optional, Union, Iterable, Any
 
 import constants
 import utils
@@ -13,6 +14,17 @@ from models import Worktime, session_scope, DBSession
 _log = logging.getLogger("ui")
 
 DEFAULT_INPUT_VALUE = str(date.today().strftime(constants.DATE_STRING_MASK))
+TABLE_COLUMN_PARAMS: Dict[str, List[Dict[str, Any]]] = {
+    "workdays": [
+        {"iid": "date", "width": 120, "text": "date"},
+        {"iid": "worktime", "width": 100, "text": "worktime"},
+        {"iid": "pause", "width": 100, "text": "pause"},
+        {"iid": "overtime", "width": 100, "text": "overtime"},
+        # {"iid": "whole_time", "width": 120, "text": "whole time"},
+        {"iid": "time_marks", "width": 400, "text": "time marks"},
+        {"iid": "day_type", "width": 90, "text": "day type", "anchor": "w"},
+    ]
+}
 
 
 # TODO: settings: change font size
@@ -24,20 +36,17 @@ DEFAULT_INPUT_VALUE = str(date.today().strftime(constants.DATE_STRING_MASK))
 # TODO: see selection when click toggle view
 
 
-def get_table_columns(
-        column_params: List[Tuple[Any, ...]]
-) -> List[constants.TableColumn]:
-    try:
-        return [constants.TableColumn(*params) for params in column_params]
-    except Exception:
-        _log.exception(
-            f"Not possible to get table columns. Wrong input values: {column_params}"
-        )
-        raise
+@dataclass(frozen=True)
+class TableColumn:
+    iid: str
+    width: int
+    text: str
+    anchor: str = "center"
 
 
 def submit(input_value: str) -> constants.WorkDay:
     workday = constants.WorkDay.from_values(input_value)
+    workday.warn_if_weekend_day()
     write_data_to_db(workday)
     return workday
 
@@ -167,13 +176,37 @@ def validate_input(full_value: str, current: str, d_status: str, ind: str) -> bo
 
 class Window:
     def __init__(self, master: tk.Tk):
-        self.master = master
-        self._table_columns = get_table_columns(constants.TABLE_COLUMNS)
+        self.master: tk.Tk = master
+        self._table_column_params: Optional[Dict[str, List[TableColumn]]] = None
         self._init_ui()
-        self._do_checks_and_fill_table(self._table)
+        self._do_checks_and_fill_main_table(self._table)
 
-    def _check_values_compatibility(self, workday: constants.WorkDay) -> bool:
-        values_to_check = [column.iid for column in self._table_columns]
+    @staticmethod
+    def _resolve_table_column_params(
+            table_column_params: Dict[str, List[Dict[str, Any]]]
+    ) -> Dict[str, List[TableColumn]]:
+        table_columns = {}
+        try:
+            for table, column_params in table_column_params.items():
+                table_column = [TableColumn(**params) for params in column_params]
+                table_columns[table] = table_column
+            return table_columns
+        except Exception:
+            _log.exception(
+                f"Resolving table columns failed. Incorrect input values: {table_column_params}"
+            )
+            raise
+
+    def _get_table_column_params(self, table: ttk.Treeview) -> List[TableColumn]:
+        table_name = table.winfo_name()
+        assert self._table_column_params is not None, "No table column params found"
+        if table_name not in self._table_column_params:
+            raise AssertionError(f"There are no params provided for the table: {table_name}")
+        return self._table_column_params[table_name]
+
+    def _check_table_column_params_compatibility(self, table: ttk.Treeview, *, workday: constants.WorkDay) -> bool:
+        table_columns = self._get_table_column_params(table)
+        values_to_check = [column.iid for column in table_columns]
         values_to_check.append("color")
         workday_values = workday.as_dict()
         for value in values_to_check:
@@ -185,18 +218,19 @@ class Window:
                 return False
         return True
 
-    def _do_checks_and_fill_table(self, table: ttk.Treeview) -> None:
+    def _do_checks_and_fill_main_table(self, table: ttk.Treeview) -> None:
         """Checks that WorkDay (db) contains all the data needed to fill the table.
-        Fills the table in case of successful verification"""
+        Fills main table in case of successful verification"""
         workdays = get_db_table_data(limit=1)
         if workdays:
-            if self._check_values_compatibility(workdays[0]):
+            if self._check_table_column_params_compatibility(table, workday=workdays[0]):
                 self._fill_table(table)
         else:
             _log.warning("No data received from the database")
 
+    @staticmethod
     def _insert_summaries(
-            self, table: ttk.Treeview, target: str, columns: List[str], values: List[Dict]
+            table: ttk.Treeview, target: str, columns: List[str], values: List[Dict]
     ) -> None:
         summary_targets = {row_values[target] for row_values in values}
         summaries: Dict[str, List] = {
@@ -249,11 +283,11 @@ class Window:
             self.clear_table(table)
 
     def _fill_table(
-            self, table: ttk.Treeview, focus_date: Optional[date] = None, limit: int = 10
+            self, table: ttk.Treeview, *, focus_date: Optional[date] = None, limit: int = 10
     ) -> None:
         workdays = get_db_table_data(limit)
         if not workdays:
-            _log.warning("No data received for filling the table")
+            _log.warning("No data received to fill the table")
             return
         workdays_dict_values = [workday.as_dict() for workday in workdays]
         self._insert_to_table(
@@ -310,7 +344,7 @@ class Window:
 
     def _init_ui(self) -> None:
         _log.debug("Building UI")
-        main_frame = ttk.LabelFrame(self.master, text="Input date and time marks")
+        main_frame = ttk.LabelFrame(self.master, text="Please, input date and time marks")
         main_frame.pack(padx=15, pady=15, fill="both", expand=True)
         main_frame.rowconfigure(0, weight=1, minsize=150)
         main_frame.rowconfigure(1, weight=18, minsize=400)
@@ -321,17 +355,17 @@ class Window:
         self.b_style = ttk.Style()
         self.b_style.configure("TButton", height=2, font="Arial 14")
 
-        self._init_input_staff(main_frame)
-        self._init_table_staff(main_frame)
-        self._init_buttons_staff(main_frame)
-        self._init_log_staff(main_frame)
+        self._init_input_stuff(main_frame)
+        self._init_table_stuff(main_frame)
+        self._init_buttons_stuff(main_frame)
+        self._init_log_stuff(main_frame)
 
     def insert_default_value(self):
         self.input.delete(0, tk.END)
         for i in DEFAULT_INPUT_VALUE + " ":
             self.input.insert(tk.END, i)
 
-    def _init_input_staff(self, master: ttk.LabelFrame) -> None:
+    def _init_input_stuff(self, master: ttk.LabelFrame) -> None:
         frame = ttk.Frame(master)
         frame.grid(row=0, column=0, sticky="nsew")
 
@@ -349,22 +383,22 @@ class Window:
         self.submit_button.pack(pady=20, ipady=20)
 
     @staticmethod
-    def _config_table(
-            table: ttk.Treeview, columns: List[constants.TableColumn]
-    ) -> None:
+    def _config_table(table: ttk.Treeview, *, columns: List[TableColumn]) -> None:
         # table.heading("#0", text="month")
         table.column("#0", width=170, anchor=tk.W)
         for column in columns:
             table.column(column.iid, width=column.width, anchor=column.anchor)
             table.heading(column.iid, text=column.text, anchor=column.anchor)
 
-    def _init_table(self, master: ttk.Frame) -> None:
+    def _init_main_table(self, master: ttk.Frame) -> None:
+        name = "workdays"
+        column_params = self._table_column_params[name]
         style = ttk.Style()
         style.configure("Treeview", rowheight=22, font=("Calibri", 11))
-
         self._table = ttk.Treeview(
             master,
-            columns=[c.iid for c in self._table_columns],
+            name=name,
+            columns=[c.iid for c in column_params],
             height=20,
             style="Treeview",
             show=["tree", "headings"],
@@ -376,20 +410,20 @@ class Window:
         self._table.tag_configure("default", background="white")
         self._table.tag_configure("green", background="honeydew")
         self._table.tag_configure("red", background="mistyrose")
-        self._config_table(table=self._table, columns=self._table_columns)
+        self._config_table(self._table, columns=column_params)
         self._table.pack(fill="both", expand=True)
         y.config(command=self._table.yview)
 
-    def _init_table_staff(self, master: ttk.LabelFrame) -> None:
+    def _init_table_stuff(self, master: ttk.LabelFrame) -> None:
         frame = ttk.Frame(master)
         frame.grid(row=1, column=0, sticky="nsew")
+        self._table_column_params = self._resolve_table_column_params(TABLE_COLUMN_PARAMS)
+        self._init_main_table(frame)
 
-        self._init_table(frame)
-
-    def _load_all_db_data(self) -> None:
+    def _fill_table_with_all_db_data(self) -> None:
         self._fill_table(self._table, limit=10000)
 
-    def _toggle_table_view(self, table: ttk.Treeview) -> None:
+    def _toggle_table_data_view(self, table: ttk.Treeview) -> None:
         state = None
         for item in table.get_children():
             if state is None:
@@ -407,14 +441,14 @@ class Window:
             _log.error(settings_window.returned_value)
 
     def get_selected(
-            self, single_only: bool = False, datarows_only: bool = False
+            self, single_only: bool = False, data_rows_only: bool = False
     ) -> Optional[Dict[str, List]]:
         select = self._table.selection()
         if single_only and len(select) != 1:
             _log.warning("Please, select one row in table")
             return None
         selected = {sel: self._table.item(sel, option="values") for sel in select}
-        if datarows_only:
+        if data_rows_only:
             return {
                 sel: val
                 for sel, val in selected.items()
@@ -423,7 +457,7 @@ class Window:
         return selected
 
     def _edit_table_row(self) -> None:
-        selected = self.get_selected(single_only=True, datarows_only=True)
+        selected = self.get_selected(single_only=True, data_rows_only=True)
         if not selected:
             return
         _, values = selected.popitem()
@@ -449,8 +483,8 @@ class Window:
         _log.debug("Value has not changed")
         # self.root.wait_visibility(self.root)
 
-    def _delete_table_rows(self, table: ttk.Treeview):
-        selected = self.get_selected(datarows_only=True)
+    def _delete_selected_table_rows(self, table: ttk.Treeview):
+        selected = self.get_selected(data_rows_only=True)
         if selected is not None:
             # message = f"[{utils.datetime_to_str(found_in_db[0].date)}, {utils.time_to_str(found_in_db[0].times)}]"
             values = [f"\n{val}" for val in list(selected.values())]
@@ -460,12 +494,12 @@ class Window:
             _log.debug(f"Db rows deleted successfully:{''.join(values)}")
             self._fill_table(table)
 
-    def _init_buttons_staff(self, master: ttk.LabelFrame) -> None:
+    def _init_buttons_stuff(self, master: ttk.LabelFrame) -> None:
         frame = ttk.Frame(master)
         frame.grid(row=2, column=0, sticky="nsew")
 
         self.load_button = ttk.Button(
-            frame, text="LOAD ALL", width=15, command=self._load_all_db_data
+            frame, text="LOAD ALL", width=15, command=self._fill_table_with_all_db_data
         )
         self.load_button.grid(row=0, column=0, padx=10, pady=25)
 
@@ -473,7 +507,7 @@ class Window:
             frame,
             text="TOGGLE VIEW",
             width=15,
-            command=lambda: self._toggle_table_view(self._table),
+            command=lambda: self._toggle_table_data_view(self._table),
         )
         self.collapse_button.grid(row=0, column=1, padx=10, pady=25)
 
@@ -491,11 +525,11 @@ class Window:
             frame,
             text="DELETE",
             width=15,
-            command=lambda: self._delete_table_rows(self._table),
+            command=lambda: self._delete_selected_table_rows(self._table),
         )
         self.delete_button.grid(row=0, column=4, padx=10)
 
-    def _init_log_staff(self, master: ttk.LabelFrame) -> None:
+    def _init_log_stuff(self, master: ttk.LabelFrame) -> None:
         frame = ttk.Frame(master)
         frame.grid(row=3, column=0, sticky="nsew")
 
@@ -505,16 +539,12 @@ class Window:
         self.text.pack(fill="both", expand=True)
 
     def _submit(self, event=None) -> None:
+        # TODO: improve 'try'
         try:
             value = self.input.get()
             workday = submit(value)
-            if hasattr(workday, "date") and workday.date.isocalendar()[2] in [6, 7]:
-                _log.warning(
-                    f"The day being filled is a weekend: {workday.date.strftime(constants.DATE_STRING_MASK)}"
-                )
-            if workday is not None:
-                self._fill_table(self._table, focus_date=workday.date)
-                self.insert_default_value()
+            self._fill_table(self._table, focus_date=workday.date)
+            self.insert_default_value()
         except Exception:
             _log.exception("Error:")
 

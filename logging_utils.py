@@ -6,9 +6,11 @@ class WidgetLogger(logging.Handler):
     def __init__(self, widget: scrolledtext.ScrolledText, root_instance: Tk):
         logging.Handler.__init__(self)
         self.setLevel(logging.DEBUG)
-        self.setFormatter(logging.Formatter("%(asctime)s: %(message)s", datefmt="%H:%M:%S"))
+        self.setFormatter(
+            logging.Formatter("%(asctime)s: %(message)s", datefmt="%H:%M:%S")
+        )
         self.widget = widget
-        self.widget.config(state='disabled')
+        self.widget.config(state="disabled")
         self.widget.tag_config("INFO", foreground="black")
         self.widget.tag_config("DEBUG", foreground="grey")
         self.widget.tag_config("WARNING", foreground="dark goldenrod")
@@ -19,8 +21,10 @@ class WidgetLogger(logging.Handler):
 
     def emit(self, record):
         if self.root_instance.children:
-            self.widget.config(state='normal')
-            self.widget.insert(constants.END, self.format(record) + '\n', record.levelname)
+            self.widget.config(state="normal")
+            self.widget.insert(
+                constants.END, self.format(record) + "\n", record.levelname
+            )
             self.widget.see(constants.END)
-            self.widget.config(state='disabled')
+            self.widget.config(state="disabled")
             self.widget.update()

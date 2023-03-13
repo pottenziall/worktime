@@ -1,8 +1,11 @@
+import logging
 from datetime import datetime, date, time
 from typing import List, Dict, Any, Union
 
 import constants
 from models import Worktime
+
+_log = logging.getLogger(__name__)
 
 
 def date_to_str(date_instance: Union[date, str], braces: bool = False) -> str:

@@ -3,7 +3,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, date, time
-from typing import Dict, List, Any, Union, Tuple
+from typing import Dict, List, Any, Union, Optional
 
 import utils
 
@@ -48,24 +48,7 @@ TABLE_ROW_TYPES = {
     "week": r"w\d{1,2}",
     "summary": r"Summary",
 }
-TABLE_COLUMNS: List[Tuple[Any, ...]] = [
-    ("date", 120, "date"),
-    ("worktime", 100, "worktime"),
-    ("pause", 100, "pause"),
-    ("overtime", 100, "overtime"),
-    # ("whole_time", 120, "whole time"),
-    ("time_marks", 400, "time marks"),
-    ("day_type", 90, "day type", "w"),
-]
 SUMMARY_COLUMNS = ["worktime", "pause", "overtime", "whole_time"]
-
-
-@dataclass
-class TableColumn:
-    iid: str
-    width: int
-    text: str
-    anchor: str = "center"
 
 
 class RowType(enum.Enum):
@@ -89,68 +72,76 @@ class WorkDay:
     day_type: str = ""
 
     @staticmethod
-    def _recognize_day_type(value_str: str) -> Dict:
-        for key, value in DAY_TYPE_KEYWORDS.items():
-            if key == value_str:
-                return value
-        raise ValueError(f"Day type not recognized: {value_str}")
+    def _recognize_date(string_value: str) -> date:
+        date_values = re.findall(f"{DATE_PATTERN}|{ORDINAL_DATE_PATTERN}", string_value)
+        if len(date_values) != 1:
+            raise ValueError(f"Input string value must include one date mark. Found {len(date_values)}: {date_values}")
+        try:
+            date_instance = datetime.strptime(date_values[0], DATE_STRING_MASK).date()
+        except ValueError:
+            try:
+                date_instance = datetime.fromordinal(int(date_values[0])).date()
+            except ValueError:
+                _log.exception(f"Wrong date string value: {date_values[0]}")
+                raise
+            else:
+                return date_instance
+        else:
+            return date_instance
 
     @staticmethod
-    def _recognize_time_marks(values: List[str]) -> List[time]:
+    def _recognize_time_marks(string_value: str) -> List[time]:
         try:
-            marks = {
-                datetime.strptime(value, TIME_STRING_MASK).time() for value in values
+            time_values = re.findall(TIME_PATTERN, string_value)
+            time_marks = {
+                datetime.strptime(value, TIME_STRING_MASK).time()
+                for value in time_values
             }
-            return list(sorted(marks))
+            return list(sorted(time_marks))
         except ValueError:
-            _log.exception(f"Incorrect time mark values: {values}")
+            _log.exception(f"Incorrect time string value: {string_value}")
             raise
+
+    @staticmethod
+    def _recognize_day_type(string_value: str) -> Optional[Dict]:
+        day_type_values = re.findall("|".join(DAY_TYPE_KEYWORDS.keys()), string_value)
+        if len(day_type_values) == 0:
+            return
+        elif len(day_type_values) == 1:
+            for day_type, params in DAY_TYPE_KEYWORDS.items():
+                if day_type == day_type_values[0]:
+                    return params
+            raise AssertionError(
+                f'Day type params not found for "{day_type_values[0]}"'
+            )
+        else:
+            raise RuntimeError(f"More than one day type recognized: {day_type_values}")
 
     @classmethod
-    def from_values(cls, input_values: Union[List, str]) -> "WorkDay":
-        try:
-            values = (
-                input_values
-                if isinstance(input_values, str)
-                else " ".join(input_values)
-            )
+    def from_values(cls, input_values: Union[List[str], str]) -> "WorkDay":
+        string_value = (
+            input_values if isinstance(input_values, str) else " ".join(input_values)
+        )
+        date_instance = cls._recognize_date(string_value)
+        time_marks = cls._recognize_time_marks(string_value)
+        day_type_params = cls._recognize_day_type(string_value)
 
-            date_values = re.findall(f"{DATE_PATTERN}|{ORDINAL_DATE_PATTERN}", values)
-            if len(date_values) != 1:
-                raise ValueError(
-                    f"Input value must include one date mark. Found {len(date_values)}: {date_values}"
-                )
-            date_mark = (
-                datetime.strptime(date_values[0], DATE_STRING_MASK).date()
-                if len(date_values[0]) == 10
-                else datetime.fromordinal(int(date_values[0])).date()
+        if time_marks and not day_type_params:
+            return WorkDay(date=date_instance, times=time_marks)
+        elif day_type_params and not time_marks:
+            return WorkDay(date=date_instance, **day_type_params)
+        elif day_type_params and time_marks:
+            day_type = day_type_params["day_type"]
+            for item in DAY_TYPE_KEYWORDS[day_type]["times"]:
+                if item not in time_marks:
+                    raise ValueError(
+                        f'Inconsistency of input values: the day type "{day_type}" does not match time marks: {time_marks}"'
+                    )
+            return WorkDay(date=date_instance, **day_type_params)
+        else:
+            raise ValueError(
+                f"Input value must include at least one date and either time mark or day type or both: {string_value}"
             )
-
-            time_values = re.findall(TIME_PATTERN, values)
-            day_type_values = re.findall("|".join(DAY_TYPE_KEYWORDS.keys()), values)
-            if time_values and not day_type_values:
-                time_values = cls._recognize_time_marks(time_values)
-                return WorkDay(date=date_mark, times=time_values)
-            elif day_type_values and not time_values:
-                rest_args = cls._recognize_day_type(day_type_values[0])
-                return WorkDay(date=date_mark, **rest_args)
-            elif day_type_values and time_values:
-                times = cls._recognize_time_marks(time_values)
-                for item in DAY_TYPE_KEYWORDS[day_type_values[0]]["times"]:
-                    if item not in times:
-                        raise ValueError(
-                            f'Inconsistency of input values: the day type "{day_type_values[0]}" does not match time '
-                            f"marks: {times}"
-                        )
-                rest_args = cls._recognize_day_type(day_type_values[0])
-                return WorkDay(date=date_mark, **rest_args)
-            else:
-                raise ValueError(
-                    f"Input values must include at least one time mark or a day type: {values}"
-                )
-        except ValueError:
-            _log.exception(f'Wrong input values: "{input_values}"')
-            raise
 
     def update(self, data: Dict[str, Any]) -> None:
         date_instance = utils.date_to_str(self.date)
@@ -218,6 +209,12 @@ class WorkDay:
         if self.worktime + self.pauses + self.overtime != self.whole_time:
             _log.critical(f"Sum (worktime + pauses + overtime) != whole time")
         return data
+
+    def warn_if_weekend_day(self) -> None:
+        if self.date.isocalendar()[2] in [6, 7]:
+            _log.warning(
+                f"The day being filled is a weekend: {self.date.strftime(DATE_STRING_MASK)}"
+            )
 
     def __str__(self):
         time_marks = utils.time_to_str(self.times)

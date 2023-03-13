@@ -116,12 +116,15 @@ def input_values(request) -> Tuple[str, date, List[time], str]:
     return request.param
 
 
-@pytest.fixture(scope="function", params=[
-    "08:00",
-    "04.12.2022",
-    "34.12.2022 08:00",
-    "04.12.2022 28:00",
-])
+@pytest.fixture(
+    scope="function",
+    params=[
+        "08:00",
+        "04.12.2022",
+        "34.12.2022 08:00",
+        "04.12.2022 28:00",
+    ],
+)
 def wrong_input_values(request) -> str:
     return request.param
 
