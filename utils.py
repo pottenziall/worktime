@@ -2,47 +2,37 @@ import logging
 from datetime import datetime, date, time
 from typing import List, Dict, Any, Union
 
-import constants
-from models import Worktime
-
 _log = logging.getLogger(__name__)
 
 
-def date_to_str(date_instance: Union[date, str], braces: bool = False) -> str:
+def date_to_str(date_instance: Union[date, str], date_mask, braces: bool = False) -> str:
     try:
         if isinstance(date, str):
             date_instance = datetime.fromordinal(int(date))
         assert isinstance(date_instance, date)
-        mark = date_instance.strftime(constants.DATE_STRING_MASK)
+        mark = date_instance.strftime(date_mask)
     except ValueError:
         mark = "<WRONG>"
     return f"[{mark}]" if braces else mark
 
 
-def time_to_str(time_instances: List[time], braces: bool = False) -> str:
-    marks = [item.strftime(constants.TIME_STRING_MASK) for item in time_instances]
+def time_to_str(time_instances: List[time], time_mask, braces: bool = False) -> str:
+    marks = [item.strftime(time_mask) for item in time_instances]
     return f'[{" ".join(marks)}]' if braces else " ".join(marks)
 
 
-def dict_to_str(data: Dict[str, Any]) -> str:
+def dict_to_str(data: Dict[str, Any], date_mask, time_mask) -> str:
     string = ""
     for key, value in data.items():
         string += " "
         if key == "date":
-            string += value.strftime(constants.DATE_STRING_MASK)
+            string += value.strftime(date_mask)
         elif key == "times":
-            marks = [item.strftime(constants.TIME_STRING_MASK) for item in value]
+            marks = [item.strftime(time_mask) for item in value]
             string += " ".join(marks)
         elif key == "day_type":
             string += value
     return string.strip()
-
-
-def get_query_result_values(result: List[Worktime]) -> List[Any]:
-    if not result:
-        return []
-    columns = result[0].__table__.columns.keys() if result else []
-    return [[str(row.__getattribute__(c)) for c in columns] for row in result]
 
 
 if __name__ == "__main__":

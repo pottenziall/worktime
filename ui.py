@@ -1,19 +1,18 @@
 import json
 import logging
-import re
 import tkinter as tk
-from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 from tkinter import messagebox, scrolledtext, ttk
-from typing import Dict, List, Optional, Union, Iterable, Any
+from typing import Dict, List, Optional, Union, Any, Protocol, Callable
+
+from dataclasses import dataclass
 
 import constants
+import logging_utils
 import utils
-from models import Worktime, session_scope, DBSession
 
 _log = logging.getLogger("ui")
 
-DEFAULT_INPUT_VALUE = str(date.today().strftime(constants.DATE_STRING_MASK))
 TABLE_COLUMN_PARAMS: Dict[str, List[Dict[str, Any]]] = {
     "workdays": [
         {"iid": "date", "width": 120, "text": "date"},
@@ -36,6 +35,28 @@ TABLE_COLUMN_PARAMS: Dict[str, List[Dict[str, Any]]] = {
 # TODO: see selection when click toggle view
 
 
+class UserInterface(Protocol):
+    def fill_main_table(self, rows: List[Dict[str, Any]]) -> None:
+        pass
+
+    def set_table_focus(
+        self, table: ttk.Treeview, focus_item: Optional[str] = None
+    ) -> None:
+        pass
+
+    def get_variable(self, name: str) -> tk.Variable:
+        pass
+
+    def process_input_value(self, value: str) -> None:
+        pass
+
+    def set_input_validator(self, validator_func: Callable) -> None:
+        pass
+
+    def insert_default_value(self, value: str) -> None:
+        pass
+
+
 @dataclass(frozen=True)
 class TableColumn:
     iid: str
@@ -44,146 +65,46 @@ class TableColumn:
     anchor: str = "center"
 
 
-def submit(input_value: str) -> constants.WorkDay:
-    workday = constants.WorkDay.from_values(input_value)
-    workday.warn_if_weekend_day()
-    write_data_to_db(workday)
-    return workday
-
-
-def update_db_row(session: DBSession, new: constants.WorkDay, exist: Worktime) -> None:
-    values = utils.get_query_result_values(result=[exist])[0]
-    exist_workday = constants.WorkDay.from_values(values)
-    exist_workday.update({k: v for k, v in new.__dict__.items()})
-    time_marks = utils.time_to_str(time_instances=exist_workday.times)
-    # TODO: create function to str db_row
-    result = (
-        session.query(Worktime)
-        .filter(Worktime.date == exist_workday.date.toordinal())
-        .all()
-    )
-    assert (
-            len(result) == 1
-    ), f"More than one db entry found for the date: {exist_workday.date}"
-    db_row = result[0]
-    if exist_workday.day_type is not None:
-        db_row.day_type = exist_workday.day_type
-    db_row.date = exist_workday.date.toordinal()
-    db_row.times = time_marks
-    # TODO: Create Worktime method to str class, results
-    # _log.info(f'The row data has been updated in db: '
-    #  f'"{utils.dict_to_str(values)}" -> "{utils.datetime_to_str(str(db_row.date))} '
-    #  f'{db_row.times} {db_row.day_type}"')
-
-
-def add_to_db(session: DBSession, workday: constants.WorkDay) -> None:
-    time_marks = utils.time_to_str(time_instances=workday.times)
-    table_row = Worktime(
-        date=workday.date.toordinal(), times=time_marks, day_type=workday.day_type
-    )
-    session.add(table_row)
-
-
-def write_data_to_db(workday: constants.WorkDay) -> None:
-    with session_scope() as session:
-        found_in_db = (
-            session.query(Worktime)
-            .filter(Worktime.date == workday.date.toordinal())
-            .all()
-        )
-        if len(found_in_db) == 1:
-            update_db_row(session=session, new=workday, exist=found_in_db[0])
-            message = f"Db table has updated with the data: {workday}"
-        elif len(found_in_db) == 0:
-            add_to_db(session=session, workday=workday)
-            message = f"Data has written to db: {workday}"
-        else:
-            raise AssertionError(
-                f"Only one db row must be found for a date, but found: {len(found_in_db)}"
-            )
-    _log.info(message)
-
-
-def get_db_table_data(limit: int) -> List[constants.WorkDay]:
-    with session_scope() as session:
-        result = (
-            session.query(Worktime).order_by(Worktime.date.desc()).limit(limit).all()
-        )
-        result = list(reversed(result))
-    if not result:
-        _log.warning("No data received from the database")
-    workdays = []
-    for values_set in utils.get_query_result_values(result=result):
-        try:
-            workday = constants.WorkDay.from_values(values_set)
-        except Exception:
-            _log.exception(
-                f"Failed to create WorkDay instance from values:\n{values_set}\nSkipping"
-            )
-        else:
-            workdays.append(workday)
-    return workdays
-
-
-def delete_db_rows(rows: Iterable[List]) -> None:
-    with session_scope() as session:
-        for row in rows:
-            date_to_search = datetime.strptime(row[0], constants.DATE_STRING_MASK)
-            found_in_db = (
-                session.query(Worktime)
-                .filter(Worktime.date == date_to_search.toordinal())
-                .all()
-            )
-            # TODO: create function for str the Worktime instance
-            session.delete(found_in_db[0])
-
-
-def get_row_from_db_table(row_values: List[str]) -> Optional[List[str]]:
-    with session_scope() as session:
-        date_to_search = datetime.strptime(row_values[0], constants.DATE_STRING_MASK)
-        found_in_db = (
-            session.query(Worktime)
-            .filter(Worktime.date == date_to_search.toordinal())
-            .all()
-        )
-        if not found_in_db:
-            return None
-        assert (
-                len(found_in_db) == 1
-        ), f"For the date {row_values[0]} found {len(found_in_db)} rows in db"
-        values = utils.get_query_result_values(result=found_in_db)
-    return values
-
-
-def validate_input(full_value: str, current: str, d_status: str, ind: str) -> bool:
-    if not full_value or d_status == "0":
-        return True
-    masks = [
-        r"\d,\d,.,\d,\d,.,\d,\d,\d,\d, ,\d,\d,:,\d,\d, ,\d,\d,:,\d,\d, ,\d,\d,:,\d,\d, ,\d,\d,:,\d,\d, ,\d,\d,:,\d,\d",
-        r"\d,\d,.,\d,\d,.,\d,\d,\d,\d, ,v,a,c,a,t,i,o,n",
-        r"\d,\d,.,\d,\d,.,\d,\d,\d,\d, ,o,f,f",
-        r"\d,\d,.,\d,\d,.,\d,\d,\d,\d, ,d,a,y, ,o,f,f",
-        r"\d,\d,.,\d,\d,.,\d,\d,\d,\d, ,s,i,c,k",
-        r"\d,\d,.,\d,\d,.,\d,\d,\d,\d, ,h,o,l,i,d,a,y",
-    ]
-    for mask in masks:
-        pattern = "".join(mask.split(",")[: int(ind) + 1])
-        if re.match(rf"{pattern}$", full_value[: int(ind) + 1]):
-            return True
-    _log.warning(f'Wrong input value: "{current}" in "{full_value}"')
-    return False
-
-
-class Window:
-    def __init__(self, master: tk.Tk):
+class Window(UserInterface):
+    def __init__(self, master: tk.Tk, **kwargs):
         self.master: tk.Tk = master
+        self._default_input_value: Optional[str] = None
         self._table_column_params: Optional[Dict[str, List[TableColumn]]] = None
+        self._set_window_name_and_geometry(master, **kwargs)
         self._init_ui()
-        self._do_checks_and_fill_main_table(self._table)
+        self._variables: List = self._init_variables()
+        # self._do_checks_and_fill_main_table(self._table)
+
+    @staticmethod
+    def _init_variables() -> List[tk.Variable]:
+        _log.debug("Initialize variables for external use")
+        variables = [
+            tk.StringVar(name="input_value"),
+            tk.StringVar(name="rows_to_be_deleted"),
+            tk.StringVar(name="edited_table_row"),
+            tk.BooleanVar(name="fill_table_with_all_data", value=False),
+            tk.StringVar(name="change_settings"),
+        ]
+        return variables
+
+    def get_variable(self, name: str) -> tk.Variable:
+        for var in self._variables:
+            if str(var) == name:
+                return var
+        raise AssertionError(f"Variable is not implemented: {name}")
+
+    @staticmethod
+    def _set_window_name_and_geometry(master: tk.Tk, **kwargs) -> None:
+        title = kwargs.get("title", "App")
+        x, y = kwargs.get("geometry", (1200, 900))
+        _log.debug(f'Set window name to "{title}" with geometry "{x}x{y}"')
+        master.title(title)
+        master.geometry(f"{x}x{y}")
+        master.minsize(x, y)
 
     @staticmethod
     def _resolve_table_column_params(
-            table_column_params: Dict[str, List[Dict[str, Any]]]
+        table_column_params: Dict[str, List[Dict[str, Any]]]
     ) -> Dict[str, List[TableColumn]]:
         table_columns = {}
         try:
@@ -201,10 +122,14 @@ class Window:
         table_name = table.winfo_name()
         assert self._table_column_params is not None, "No table column params found"
         if table_name not in self._table_column_params:
-            raise AssertionError(f"There are no params provided for the table: {table_name}")
+            raise AssertionError(
+                f"There are no params provided for the table: {table_name}"
+            )
         return self._table_column_params[table_name]
 
-    def _check_table_column_params_compatibility(self, table: ttk.Treeview, *, workday: constants.WorkDay) -> bool:
+    def _check_table_column_params_compatibility(
+        self, table: ttk.Treeview, *, workday: constants.WorkDay
+    ) -> bool:
         table_columns = self._get_table_column_params(table)
         values_to_check = [column.iid for column in table_columns]
         values_to_check.append("color")
@@ -218,19 +143,22 @@ class Window:
                 return False
         return True
 
-    def _do_checks_and_fill_main_table(self, table: ttk.Treeview) -> None:
-        """Checks that WorkDay (db) contains all the data needed to fill the table.
-        Fills main table in case of successful verification"""
-        workdays = get_db_table_data(limit=1)
-        if workdays:
-            if self._check_table_column_params_compatibility(table, workday=workdays[0]):
-                self._fill_table(table)
-        else:
-            _log.warning("No data received from the database")
+    def fill_main_table(self, rows: List[Dict[str, Any]]) -> None:
+        self._fill_table(rows, table=self._main_table)
+
+    # """Checks that WorkDay (db) contains all the data needed to fill the table.
+    # Fills main table in case of successful verification"""
+    # TODO: uncomment
+    # workdays = get_db_table_data(limit=1)
+    # if workdays:
+    #     if self._check_table_column_params_compatibility(table, workday=workdays[0]):
+    #         self._fill_table(table)
+    # else:
+    #     _log.warning("No data received from the database")
 
     @staticmethod
     def _insert_summaries(
-            table: ttk.Treeview, target: str, columns: List[str], values: List[Dict]
+        table: ttk.Treeview, target: str, columns: List[str], values: List[Dict]
     ) -> None:
         summary_targets = {row_values[target] for row_values in values}
         summaries: Dict[str, List] = {
@@ -254,7 +182,7 @@ class Window:
         table.update()
 
     def _insert_to_table(
-            self, table: ttk.Treeview, parents: List[str], rows_values: List[Dict]
+        self, table: ttk.Treeview, *, parents: List[str], rows_values: List[Dict]
     ) -> None:
         self.clear_table(table)
         columns = table.config("columns")[-1]
@@ -283,50 +211,46 @@ class Window:
             self.clear_table(table)
 
     def _fill_table(
-            self, table: ttk.Treeview, *, focus_date: Optional[date] = None, limit: int = 10
+        self,
+        rows: List[Dict[str, Any]],
+        *,
+        table: ttk.Treeview,
+        focus_date: Optional[date] = None,
     ) -> None:
-        workdays = get_db_table_data(limit)
-        if not workdays:
-            _log.warning("No data received to fill the table")
-            return
-        workdays_dict_values = [workday.as_dict() for workday in workdays]
         self._insert_to_table(
-            table=self._table,
+            table=self._main_table,
             parents=["month", "week"],
-            rows_values=workdays_dict_values,
+            rows_values=rows,
         )
         self._insert_summaries(
-            table=self._table,
+            table=self._main_table,
             target="week",
             columns=constants.SUMMARY_COLUMNS,
-            values=workdays_dict_values,
+            values=rows,
         )
-        _log.debug(
-            f"Number of db rows loaded into the table: {len(workdays)}, limit: {limit}"
-        )
+        _log.debug(f"{len(rows)} db rows loaded into '{table.winfo_name()}' table")
         if focus_date is not None:
-            focus_item = utils.date_to_str(focus_date)
-            self._set_table_focus(table, focus_item)
+            focus_item = utils.date_to_str(focus_date, constants.DATE_STRING_MASK)
+            self.set_table_focus(table, focus_item)
         else:
-            self._set_table_focus(table)
+            self.set_table_focus(table)
 
-    def _set_table_focus(
-            self, table: ttk.Treeview, focus_item: Optional[str] = None
+    def set_table_focus(
+        self, table: ttk.Treeview, focus_item: Optional[str] = None
     ) -> None:
         if focus_item and not table.exists(focus_item):
-            _log.warning(
-                f"Item to be focused does not exist in the table: {focus_item}"
-            )
+            _log.warning(f"Focusing on a non-existing table item: {focus_item}")
             focus_item = table.get_children()[-1]
         else:
-            focus_item = self._get_last_table_item(table)
-        self._table.selection_set(focus_item)
-        self._table.see(focus_item)
+            focus_item = self._get_table_data_item(table)
+        self._main_table.selection_set(focus_item)
+        self._main_table.see(focus_item)
 
-    def _get_last_table_item(self, table: ttk.Treeview, item: str = "") -> str:
-        children = self._table.get_children(item)
+    def _get_table_data_item(self, table: ttk.Treeview, item: str = "") -> str:
+        """Gets 'item' from table if provided, otherwise gets very first table item"""
+        children = self._main_table.get_children(item)
         if children:
-            return self._get_last_table_item(table, children[-1])
+            return self._get_table_data_item(table, children[0])
         else:
             return item
 
@@ -344,7 +268,9 @@ class Window:
 
     def _init_ui(self) -> None:
         _log.debug("Building UI")
-        main_frame = ttk.LabelFrame(self.master, text="Please, input date and time marks")
+        main_frame = ttk.LabelFrame(
+            self.master, text="Please, input date and time marks"
+        )
         main_frame.pack(padx=15, pady=15, fill="both", expand=True)
         main_frame.rowconfigure(0, weight=1, minsize=150)
         main_frame.rowconfigure(1, weight=18, minsize=400)
@@ -352,33 +278,48 @@ class Window:
         main_frame.rowconfigure(3, weight=0)
         main_frame.columnconfigure(0, weight=8)
 
-        self.b_style = ttk.Style()
-        self.b_style.configure("TButton", height=2, font="Arial 14")
-
+        self._init_log_stuff(main_frame)
         self._init_input_stuff(main_frame)
         self._init_table_stuff(main_frame)
         self._init_buttons_stuff(main_frame)
-        self._init_log_stuff(main_frame)
 
-    def insert_default_value(self):
+        self.b_style = ttk.Style()
+        self.b_style.configure("TButton", height=2, font="Arial 14")
+
+    def insert_default_value(self, value: Optional[str] = None) -> None:
+        if value is not None:
+            self._default_input_value = value
+        if self._default_input_value is None:
+            raise AssertionError(
+                f"Default input value must be received from a controller class"
+            )
         self.input.delete(0, tk.END)
-        for i in DEFAULT_INPUT_VALUE + " ":
+        for i in self._default_input_value + " ":
             self.input.insert(tk.END, i)
 
+    def set_input_validator(self, validator_func: Callable) -> None:
+        vcmd = (self.master.register(validator_func), "%P", "%S", "%d", "%i")
+        self.input.config(validatecommand=vcmd, validate="key")
+
     def _init_input_stuff(self, master: ttk.LabelFrame) -> None:
+        _log.debug("Initialize input panel")
         frame = ttk.Frame(master)
         frame.grid(row=0, column=0, sticky="nsew")
-
-        vcmd = (self.master.register(validate_input), "%P", "%S", "%d", "%i")
-        self.input = ttk.Entry(frame, width=60, font="Arial 19")
+        self.input = ttk.Entry(
+            frame,
+            width=60,
+            font="Arial 19",
+        )
         self.input.pack(padx=10, fill="both", expand=True)
-        self.input.bind("<Return>", self._submit)
-        self.insert_default_value()
-        self.input.config(validatecommand=vcmd, validate="key")
+        self.input.bind("<Return>", self._submit_input_value)
         self.input.focus_set()
 
         self.submit_button = ttk.Button(
-            frame, text="SUBMIT", style="TButton", width=20, command=self._submit
+            frame,
+            text="SUBMIT",
+            style="TButton",
+            width=20,
+            command=self._submit_input_value,
         )
         self.submit_button.pack(pady=20, ipady=20)
 
@@ -395,7 +336,7 @@ class Window:
         column_params = self._table_column_params[name]
         style = ttk.Style()
         style.configure("Treeview", rowheight=22, font=("Calibri", 11))
-        self._table = ttk.Treeview(
+        self._main_table = ttk.Treeview(
             master,
             name=name,
             columns=[c.iid for c in column_params],
@@ -403,25 +344,25 @@ class Window:
             style="Treeview",
             show=["tree", "headings"],
         )
-        y = ttk.Scrollbar(master, orient="vertical", command=self._table.yview)
+        y = ttk.Scrollbar(master, orient="vertical", command=self._main_table.yview)
         y.pack(side="right", fill="y")
-        self._table.configure(yscrollcommand=y.set)
+        self._main_table.configure(yscrollcommand=y.set)
 
-        self._table.tag_configure("default", background="white")
-        self._table.tag_configure("green", background="honeydew")
-        self._table.tag_configure("red", background="mistyrose")
-        self._config_table(self._table, columns=column_params)
-        self._table.pack(fill="both", expand=True)
-        y.config(command=self._table.yview)
+        self._main_table.tag_configure("default", background="white")
+        self._main_table.tag_configure("green", background="honeydew")
+        self._main_table.tag_configure("red", background="mistyrose")
+        self._config_table(self._main_table, columns=column_params)
+        self._main_table.pack(fill="both", expand=True)
+        y.config(command=self._main_table.yview)
 
     def _init_table_stuff(self, master: ttk.LabelFrame) -> None:
+        _log.debug("Initialize main table")
         frame = ttk.Frame(master)
         frame.grid(row=1, column=0, sticky="nsew")
-        self._table_column_params = self._resolve_table_column_params(TABLE_COLUMN_PARAMS)
+        self._table_column_params = self._resolve_table_column_params(
+            TABLE_COLUMN_PARAMS
+        )
         self._init_main_table(frame)
-
-    def _fill_table_with_all_db_data(self) -> None:
-        self._fill_table(self._table, limit=10000)
 
     def _toggle_table_data_view(self, table: ttk.Treeview) -> None:
         state = None
@@ -431,7 +372,7 @@ class Window:
                 state = True if not state else False
             table.item(item, open=state)
         if state:
-            self._set_table_focus(table)
+            self.set_table_focus(table)
 
     def _change_settings(self) -> None:
         settings_window = SettingsWindow(root=self.master)
@@ -440,14 +381,15 @@ class Window:
             # TODO: change the error comment
             _log.error(settings_window.returned_value)
 
-    def get_selected(
-            self, single_only: bool = False, data_rows_only: bool = False
+    @staticmethod
+    def _get_selected(
+        table: ttk.Treeview, single_only: bool = False, data_rows_only: bool = False
     ) -> Optional[Dict[str, List]]:
-        select = self._table.selection()
+        select = table.selection()
         if single_only and len(select) != 1:
             _log.warning("Please, select one row in table")
             return None
-        selected = {sel: self._table.item(sel, option="values") for sel in select}
+        selected = {sel: table.item(sel, option="values") for sel in select}
         if data_rows_only:
             return {
                 sel: val
@@ -456,45 +398,48 @@ class Window:
             }
         return selected
 
-    def _edit_table_row(self) -> None:
-        selected = self.get_selected(single_only=True, data_rows_only=True)
+    def _edit_table_row(self, table: ttk.Treeview) -> None:
+        selected = self._get_selected(table, single_only=True, data_rows_only=True)
         if not selected:
             return
-        _, values = selected.popitem()
-        db_row = get_row_from_db_table(row_values=values)
+        table_row_id, _ = selected.popitem()
+        # db_row = get_row_from_db_table(row_values=values)
         # TODO: Manage case when db_row is None
-        if db_row is None:
-            raise RuntimeError("No rows to edit")
-        value_to_edit = " ".join(db_row[0])
-
+        # if db_row is None:
+        #    raise RuntimeError("No rows to edit")
+        # value_to_edit = " ".join(db_row[0])
+        value_to_edit = ""
         edit_window = EditWindow(root=self.master)
         edit_window.insert_to_entry(value_to_edit)
         self.master.wait_window(edit_window.top_level)
         if (
-                edit_window.returned_value
-                and not value_to_edit == edit_window.returned_value
+            edit_window.returned_value
+            and not value_to_edit == edit_window.returned_value
         ):
-            previous_date = values[0]
-            current_date = edit_window.returned_value.split()[0]
-            if current_date != previous_date:
-                _log.error(f"Date editing under developing")
-            else:
-                submit(edit_window.returned_value)
+            self.get_variable("edited_table_row").set(edit_window.returned_value)
+        # previous_date = values[0]
+        # current_date = edit_window.returned_value.split()[0]
+        # if current_date != previous_date:
+        #    _log.error(f"Date editing under developing")
+        # else:
+        #    process_value(edit_window.returned_value)
         _log.debug("Value has not changed")
         # self.root.wait_visibility(self.root)
 
     def _delete_selected_table_rows(self, table: ttk.Treeview):
-        selected = self.get_selected(data_rows_only=True)
+        selected = self._get_selected(table, data_rows_only=True)
         if selected is not None:
             # message = f"[{utils.datetime_to_str(found_in_db[0].date)}, {utils.time_to_str(found_in_db[0].times)}]"
             values = [f"\n{val}" for val in list(selected.values())]
             if not self.ask_delete("".join(values)):
                 return
-            delete_db_rows(selected.values())
-            _log.debug(f"Db rows deleted successfully:{''.join(values)}")
-            self._fill_table(table)
+            keys_to_be_deleted = ",".join(selected.keys())
+            self.get_variable("rows_to_be_deleted").set(keys_to_be_deleted)
+            # _log.debug(f"Db rows deleted successfully:{''.join(values)}")
+            # self._fill_table(table)
 
     def _init_buttons_stuff(self, master: ttk.LabelFrame) -> None:
+        _log.debug("Initialize buttons panel")
         frame = ttk.Frame(master)
         frame.grid(row=2, column=0, sticky="nsew")
 
@@ -503,13 +448,13 @@ class Window:
         )
         self.load_button.grid(row=0, column=0, padx=10, pady=25)
 
-        self.collapse_button = ttk.Button(
+        self.toggle_button = ttk.Button(
             frame,
             text="TOGGLE VIEW",
             width=15,
-            command=lambda: self._toggle_table_data_view(self._table),
+            command=lambda: self._toggle_table_data_view(self._main_table),
         )
-        self.collapse_button.grid(row=0, column=1, padx=10, pady=25)
+        self.toggle_button.grid(row=0, column=1, padx=10, pady=25)
 
         self.settings_button = ttk.Button(
             frame, text="SETTINGS", width=15, command=self._change_settings
@@ -517,7 +462,10 @@ class Window:
         self.settings_button.grid(row=0, column=2, padx=10, pady=25)
 
         self.edit_button = ttk.Button(
-            frame, text="EDIT", width=15, command=self._edit_table_row
+            frame,
+            text="EDIT",
+            width=15,
+            command=lambda: self._edit_table_row(self._main_table),
         )
         self.edit_button.grid(row=0, column=3, padx=10)
 
@@ -525,11 +473,12 @@ class Window:
             frame,
             text="DELETE",
             width=15,
-            command=lambda: self._delete_selected_table_rows(self._table),
+            command=lambda: self._delete_selected_table_rows(self._main_table),
         )
         self.delete_button.grid(row=0, column=4, padx=10)
 
     def _init_log_stuff(self, master: ttk.LabelFrame) -> None:
+        _log.debug("Initialize log panel")
         frame = ttk.Frame(master)
         frame.grid(row=3, column=0, sticky="nsew")
 
@@ -537,16 +486,18 @@ class Window:
             frame, width=90, height=6, font="Arial 13"
         )
         self.text.pack(fill="both", expand=True)
+        self.text_handler = logging_utils.WidgetLogger(self.text, self.master)
+        _log.addHandler(self.text_handler)
 
-    def _submit(self, event=None) -> None:
-        # TODO: improve 'try'
-        try:
-            value = self.input.get()
-            workday = submit(value)
-            self._fill_table(self._table, focus_date=workday.date)
-            self.insert_default_value()
-        except Exception:
-            _log.exception("Error:")
+    def _get_input_value(self) -> str:
+        return self.input.get()
+
+    def _submit_input_value(self, event=None) -> None:
+        value = self._get_input_value()
+        self.get_variable("input_value").set(value)
+
+    def _fill_table_with_all_db_data(self) -> None:
+        self.get_variable("fill_table_with_all_data").set(True)
 
 
 class ModalWindow:
@@ -640,7 +591,7 @@ class SettingsWindow(ModalWindow):
     def _get_states(variables: List[tk.IntVar]) -> Dict[str, int]:
         states = {}
         for var in variables:
-            states[var._name] = var.get()
+            states[str(var)] = var.get()
         return states
 
     def _submit(self, value: Union[str, Dict]) -> None:

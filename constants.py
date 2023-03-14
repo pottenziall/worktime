@@ -1,14 +1,16 @@
 import enum
 import logging
 import re
-from dataclasses import dataclass, field
 from datetime import datetime, timedelta, date, time
 from typing import Dict, List, Any, Union, Optional
 
-import utils
+from dataclasses import dataclass, field
+
+from utils import date_to_str, time_to_str
 
 _log = logging.getLogger(__name__)
 
+RowDictData = Dict[str, str]
 CONFIG_FILE_PATH = "/home/fjr0p1/PycharmProjects/worktime/config.json"
 DEFAULT_WORKDAY_TIMEDELTA = timedelta(hours=8)
 ANY_DATE = date(2023, 1, 1)
@@ -72,10 +74,12 @@ class WorkDay:
     day_type: str = ""
 
     @staticmethod
-    def _recognize_date(string_value: str) -> date:
+    def _recognize_date(string_value: str) -> date:  # type: ignore
         date_values = re.findall(f"{DATE_PATTERN}|{ORDINAL_DATE_PATTERN}", string_value)
         if len(date_values) != 1:
-            raise ValueError(f"Input string value must include one date mark. Found {len(date_values)}: {date_values}")
+            raise ValueError(
+                f"Input string value must include one date mark. Found {len(date_values)}: {date_values}"
+            )
         try:
             date_instance = datetime.strptime(date_values[0], DATE_STRING_MASK).date()
         except ValueError:
@@ -106,7 +110,7 @@ class WorkDay:
     def _recognize_day_type(string_value: str) -> Optional[Dict]:
         day_type_values = re.findall("|".join(DAY_TYPE_KEYWORDS.keys()), string_value)
         if len(day_type_values) == 0:
-            return
+            return None
         elif len(day_type_values) == 1:
             for day_type, params in DAY_TYPE_KEYWORDS.items():
                 if day_type == day_type_values[0]:
@@ -144,7 +148,7 @@ class WorkDay:
             )
 
     def update(self, data: Dict[str, Any]) -> None:
-        date_instance = utils.date_to_str(self.date)
+        date_instance = date_to_str(self.date)
         assert data.get(
             "date"
         ), f'Data to update must include "date" key: {data}. WorkDay has not updated'
@@ -155,15 +159,15 @@ class WorkDay:
         if data.get("day_type"):
             _log.warning(
                 f'For "{date_instance}", time marks will be replaced in db because the new "{data["day_type"]}" day type'
-                f' received: {utils.time_to_str(self.times, braces=True)} -> {utils.time_to_str(data["times"], braces=True)}'
+                f' received: {time_to_str(self.times, braces=True)} -> {time_to_str(data["times"], braces=True)}'
             )
             self.times = data["times"]
             self.day_type = data["day_type"]
         elif not data.get("day_type", False) and self.day_type:
             self.day_type = ""
             _log.warning(
-                f'For the date "{date_instance}", time marks will be replaced in db: {utils.time_to_str(self.times, braces=True)}'
-                f'-> {utils.time_to_str(data["times"], braces=True)}'
+                f'For the date "{date_instance}", time marks will be replaced in db: {time_to_str(self.times, braces=True)}'
+                f'-> {time_to_str(data["times"], braces=True)}'
             )
             self.times = data["times"]
         elif not data.get("day_type", False) and not self.day_type:
@@ -172,7 +176,7 @@ class WorkDay:
             self.times = sorted(list(times))
             _log.debug(
                 f'For the date "{date_instance}", existing time marks and new ones are combined. '
-                f"Result: {utils.time_to_str(self.times, braces=True)}"
+                f"Result: {time_to_str(self.times, braces=True)}"
             )
         else:
             _log.critical("Caught unhandled error")
@@ -180,10 +184,10 @@ class WorkDay:
     @property
     def color(self) -> str:
         if any(
-                [
-                    self.worktime < DEFAULT_WORKDAY_TIMEDELTA,
-                    self.whole_time == timedelta(seconds=0),
-                ]
+            [
+                self.worktime < DEFAULT_WORKDAY_TIMEDELTA,
+                self.whole_time == timedelta(seconds=0),
+            ]
         ):
             return "red"
         elif self.overtime > timedelta(0):
@@ -210,6 +214,14 @@ class WorkDay:
             _log.critical(f"Sum (worktime + pauses + overtime) != whole time")
         return data
 
+    def as_db(self) -> RowDictData:
+        values = {
+            "date": str(self.date.toordinal()),
+            "times": time_to_str(self.times, TIME_STRING_MASK),
+            "day_type": self.day_type,
+        }
+        return values
+
     def warn_if_weekend_day(self) -> None:
         if self.date.isocalendar()[2] in [6, 7]:
             _log.warning(
@@ -217,7 +229,7 @@ class WorkDay:
             )
 
     def __str__(self):
-        time_marks = utils.time_to_str(self.times)
+        time_marks = time_to_str(self.times)
         return f'{self.date.strftime(DATE_STRING_MASK)} {time_marks} {self.day_type if self.day_type else ""}'
 
     @property
