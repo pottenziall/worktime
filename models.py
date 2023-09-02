@@ -34,7 +34,7 @@ class Worktime(Base):
 
 
 # TODO: add sqlalchemy echo to the settings window
-engine = create_engine(f"sqlite:///{DEFAULT_DB_PATH}", echo=True)
+engine = create_engine(f"sqlite:///{DEFAULT_DB_PATH}")  # , echo=True)
 Base.metadata.create_all(engine)
 
 

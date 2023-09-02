@@ -79,10 +79,25 @@ class App:
         self._ui.fill_main_table(workdays_dict_values)
 
     def add_to_db(self, table_value: str) -> None:
-        workday = constants.WorkDay.from_values(table_value)
-        db_row_values = workday.as_db()
-        self._db_if.write_to_db([db_row_values], table=models.Worktime)
-        self.fill_ui_with_workdays(limit=10)
+        skip_update = False
+        try:
+            new_workday = constants.WorkDay.from_values(table_value)
+            key = new_workday.as_db()["date"]
+            found_in_db = self._db_if.find_in_db(table=models.Worktime, key=key)
+            if found_in_db is not None:
+                assert len(found_in_db) == 1, f"CRITICAL: database contains {len(found_in_db)} items for '{key}' key"
+                workday_from_db = found_in_db[0].as_workday()
+                new_workday = workday_from_db + new_workday
+                if new_workday == workday_from_db:
+                    skip_update = True
+            if not skip_update:
+                db_row_values = new_workday.as_db()
+                self._db_if.write_to_db([db_row_values], table=models.Worktime)
+        except Exception:
+            _log.exception("Adding to the database failed:")
+        self._ui.insert_default_value(DEFAULT_INPUT_VALUE)
+        if not skip_update:
+            self.fill_ui_with_workdays(limit=10)
 
     def delete_db_rows(self, table_ids: tp.List[str]) -> None:
         dates = [

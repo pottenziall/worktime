@@ -47,9 +47,6 @@ class UserInterface(Protocol):
     def get_variable(self, name: str) -> tk.Variable:
         pass
 
-    def process_input_value(self, value: str) -> None:
-        pass
-
     def set_input_validator(self, validator_func: Callable) -> None:
         pass
 
@@ -228,7 +225,7 @@ class Window(UserInterface):
             columns=constants.SUMMARY_COLUMNS,
             values=rows,
         )
-        _log.debug(f"{len(rows)} db rows loaded into '{table.winfo_name()}' table")
+        _log.debug(f"{len(rows)} rows from database have been loaded into '{table.winfo_name()}' table")
         if focus_date is not None:
             focus_item = utils.date_to_str(focus_date, constants.DATE_STRING_MASK)
             self.set_table_focus(table, focus_item)
@@ -487,7 +484,8 @@ class Window(UserInterface):
         )
         self.text.pack(fill="both", expand=True)
         self.text_handler = logging_utils.WidgetLogger(self.text, self.master)
-        _log.addHandler(self.text_handler)
+        root_logger = logging.getLogger()
+        root_logger.addHandler(self.text_handler)
 
     def _get_input_value(self) -> str:
         return self.input.get()
