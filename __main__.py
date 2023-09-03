@@ -11,6 +11,18 @@ import ui
 
 _log = logging.getLogger("main")
 
+# Potential mypy keys:
+# scripts_are_modules=True
+# ignore_errors=False
+# namespace_packages=True
+# explicit_package_bases=True
+# follow_imports=error
+# allow_untyped_globals=False
+# implicit_reexport=False
+# strict_concatenate=True
+# strict_equality=True
+# strict=True
+# verbosity=5
 # TODO: select table columns in settings
 # TODO: add possibility to write >1 day info on time
 # TODO: display error and warnings at start
@@ -36,12 +48,7 @@ logging.basicConfig(
 
 
 class App:
-    def __init__(
-        self,
-        *,
-        user_interface: ui.Window,
-        db_if: database_interface.WorktimeSqliteDbInterface,
-    ) -> None:
+    def __init__(self, *, user_interface: ui.Window, db_if: database_interface.WorktimeSqliteDbInterface) -> None:
         self._ui: ui.Window = user_interface
         self._db_if: database_interface.WorktimeSqliteDbInterface = db_if
         self._prepare_ui()
@@ -57,20 +64,13 @@ class App:
         input_var.trace_variable("w", lambda *x: self.add_to_db(input_var.get()))
 
         rows_to_delete_var = self._ui.get_variable("rows_to_be_deleted")
-        rows_to_delete_var.trace_variable(
-            "w",
-            lambda *x: self.delete_db_rows(rows_to_delete_var.get().split(",")),
-        )
+        rows_to_delete_var.trace_variable("w", lambda *x: self.delete_db_rows(rows_to_delete_var.get().split(",")))
 
         edit_table_row_var = self._ui.get_variable("edited_table_row")
-        edit_table_row_var.trace_variable(
-            "w", lambda *x: self.add_to_db(edit_table_row_var.get())
-        )
+        edit_table_row_var.trace_variable("w", lambda *x: self.add_to_db(edit_table_row_var.get()))
 
         fill_table_with_all_data_var = self._ui.get_variable("fill_table_with_all_data")
-        fill_table_with_all_data_var.trace_variable(
-            "w", lambda *x: self.fill_ui_with_workdays()
-        )
+        fill_table_with_all_data_var.trace_variable("w", lambda *x: self.fill_ui_with_workdays())
 
     def fill_ui_with_workdays(self, limit: int = MAX_ROW_READ_LIMIT) -> None:
         result = self._db_if.read(table=models.Worktime, limit=limit)
@@ -100,9 +100,7 @@ class App:
             self.fill_ui_with_workdays(limit=10)
 
     def delete_db_rows(self, table_ids: tp.List[str]) -> None:
-        dates = [
-            datetime.strptime(item, constants.DATE_STRING_MASK) for item in table_ids
-        ]
+        dates = [datetime.strptime(item, constants.DATE_STRING_MASK) for item in table_ids]
         row_ids = [str(d.toordinal()) for d in dates]
         self._db_if.delete(row_ids, table=models.Worktime)
         self.fill_ui_with_workdays(limit=10)
@@ -128,13 +126,9 @@ class App:
         return False
 
 
-if __name__ == "__main__":
-    root = tkinter.Tk()
-    _log.debug("Start application")
-    window = ui.Window(master=root, title=APP_NAME, geometry=WINDOW_GEOMETRY)
-    app = App(
-        user_interface=window,
-        db_if=database_interface.WorktimeSqliteDbInterface(models.session_scope),
-    )
-    root.mainloop()
-    _log.debug("Application closed")
+root = tkinter.Tk()
+_log.debug("Start application")
+window = ui.Window(master=root, title=APP_NAME, geometry=WINDOW_GEOMETRY)
+app = App(user_interface=window, db_if=database_interface.WorktimeSqliteDbInterface(models.session_scope))
+root.mainloop()
+_log.debug("Application closed")

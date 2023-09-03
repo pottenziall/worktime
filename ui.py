@@ -69,7 +69,7 @@ class Window(UserInterface):
         self._table_column_params: Optional[Dict[str, List[TableColumn]]] = None
         self._set_window_name_and_geometry(master, **kwargs)
         self._init_ui()
-        self._variables: List = self._init_variables()
+        self._variables: List[tk.Variable] = self._init_variables()
         # self._do_checks_and_fill_main_table(self._table)
 
     @staticmethod
@@ -140,7 +140,7 @@ class Window(UserInterface):
                 return False
         return True
 
-    def fill_main_table(self, rows: List[Dict[str, Any]]) -> None:
+    def fill_main_table(self, rows: List[Dict[str, object]]) -> None:
         self._fill_table(rows, table=self._main_table)
 
     # """Checks that WorkDay (db) contains all the data needed to fill the table.
@@ -207,9 +207,10 @@ class Window(UserInterface):
             _log.exception("Failed to fill the table")
             self.clear_table(table)
 
+    # TODO: focus on fresh added line
     def _fill_table(
         self,
-        rows: List[Dict[str, Any]],
+            rows: List[Dict[str, object]],
         *,
         table: ttk.Treeview,
         focus_date: Optional[date] = None,

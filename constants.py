@@ -3,7 +3,7 @@ import enum
 import logging
 import re
 from enum import Enum
-from typing import Dict, List, Any, Union
+from typing import Dict, List, Union
 
 from dataclasses import dataclass, field
 
@@ -199,7 +199,7 @@ class WorkDay:
             return "green"
         return "default"
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> Dict[str, object]:
         data = dict(
             week="week" + " " + str(self.date.isocalendar()[1]),
             month=self.date.strftime("%B %Y"),
@@ -230,7 +230,7 @@ class WorkDay:
         if self.date.isocalendar()[2] in [6, 7]:
             _log.warning(f"The day being filled is a weekend: {self.date.strftime(DATE_STRING_MASK)}")
 
-    def __str__(self):
+    def __str__(self) -> str:
         time_marks = time_to_str(self.times, TIME_STRING_MASK)
         return f'{self.date.strftime(DATE_STRING_MASK)} {time_marks} {self.day_type.value}'
 
@@ -259,7 +259,7 @@ class WorkDay:
         return worktime if worktime <= DEFAULT_WORKDAY_TIMEDELTA else DEFAULT_WORKDAY_TIMEDELTA
 
     @property
-    def overtime(self):
+    def overtime(self) -> dt.timedelta:
         if len(self.times) < 2:
             return dt.timedelta(0)
         worktime = self.whole_time - self.pauses

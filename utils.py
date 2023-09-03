@@ -5,7 +5,7 @@ from typing import List, Union
 _log = logging.getLogger(__name__)
 
 
-def date_to_str(date_instance: Union[dt.date, str], date_mask, braces: bool = False) -> str:
+def date_to_str(date_instance: Union[dt.date, str], date_mask: str, braces: bool = False) -> str:
     try:
         if isinstance(date_instance, str):
             date_instance = dt.datetime.fromordinal(int(date_instance))
@@ -16,7 +16,7 @@ def date_to_str(date_instance: Union[dt.date, str], date_mask, braces: bool = Fa
     return f"[{mark}]" if braces else mark
 
 
-def time_to_str(time_instances: List[dt.time], time_mask, braces: bool = False) -> str:
+def time_to_str(time_instances: List[dt.time], time_mask: str, braces: bool = False) -> str:
     marks = [item.strftime(time_mask) for item in time_instances]
     return f'[{" ".join(marks)}]' if braces else " ".join(marks)
 

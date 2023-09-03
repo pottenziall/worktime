@@ -1,9 +1,7 @@
 import logging
-from typing import Protocol, List, Callable, Type, Optional
+from typing import Protocol, List, Callable, Type, Optional, ContextManager
 
-import sqlalchemy.orm as orm  # type: ignore
-from sqlalchemy import update
-from sqlalchemy.engine import Result  # type: ignore
+from sqlalchemy import update, orm
 
 import constants as c
 import models as m
@@ -27,11 +25,11 @@ class DbInterface(Protocol):
 
 
 class WorktimeSqliteDbInterface:
-    def __init__(self, session_scope: Callable) -> None:
-        self._session_scope: Callable = session_scope
+    def __init__(self, session_scope: Callable[[], ContextManager[orm.Session]]) -> None:
+        self._session_scope: Callable[[], ContextManager[orm.Session]] = session_scope
 
     def read(self, *, table: Type[m.Worktime], limit: Optional[int] = None) -> List[m.Worktime]:
-        query = orm.Query([table]).order_by(table.__mapper__.primary_key[0].desc()).limit(limit)
+        query: orm.Query = orm.Query([table]).order_by(table.__mapper__.primary_key[0].desc()).limit(limit)
         with self._session_scope() as s:
             return query.with_session(s).all()
 
@@ -57,7 +55,7 @@ class WorktimeSqliteDbInterface:
             result = s.query(table).filter(m.Worktime.__dict__[pk_name].in_(row_ids)).delete()
         assert result == len(row_ids)
 
-    def write_to_db(self, row_dicts: List[c.RowDictData], *, table: Type[m.Worktime]):
+    def write_to_db(self, row_dicts: List[c.RowDictData], *, table: Type[m.Worktime]) -> None:
         pk_name = table.__mapper__.primary_key[0].name
         for row_dict in row_dicts:
             with self._session_scope() as s:

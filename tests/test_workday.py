@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timedelta, date, time
 from typing import Any, Dict, List
 
-import pytest  # type: ignore
+import pytest
 
 from constants import WorkDay, DayType
 
@@ -101,7 +101,9 @@ class TestAddWorkdays:
             ({"date": DATE_1, "times": TIMES["vacation"], "day_type": DayType.VACATION}, {"date": DATE_1}),
         ],
     )
-    def test_should_keep_workday_values_without_change(self, workday_values, update_values) -> None:
+    def test_should_keep_workday_values_without_change(
+            self, workday_values: Dict[str, Any], update_values: Dict[str, Any]
+    ) -> None:
         first_workday = WorkDay(**workday_values)
         second_workday = WorkDay(**update_values)
         third_workday = first_workday + second_workday

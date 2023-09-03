@@ -1,10 +1,10 @@
 import json
 import logging
-import typing as tp
 from contextlib import contextmanager
+from typing import Generator
 
-from sqlalchemy import Column, Text, create_engine  # type: ignore
-from sqlalchemy.orm import Session, DeclarativeBase  # type: ignore
+from sqlalchemy import Column, Text, create_engine
+from sqlalchemy.orm import Session, DeclarativeBase
 
 from constants import WorkDay
 
@@ -39,7 +39,7 @@ Base.metadata.create_all(engine)
 
 
 @contextmanager
-def session_scope() -> tp.Generator[tp.Any, None, None]:
+def session_scope() -> Generator[Session, None, None]:
     """Provides a transactional scope around a series of operations."""
     session = Session(engine, expire_on_commit=False)
     try:
