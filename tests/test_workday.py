@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 
 import pytest
 
-from constants import WorkDay, DayType
+from packages.constants import WorkDay, DayType
 
 _log = logging.getLogger(__name__)
 

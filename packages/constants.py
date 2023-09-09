@@ -2,17 +2,26 @@ import datetime as dt
 import enum
 import logging
 import re
+import sys
 from enum import Enum
+from pathlib import Path
 from typing import Dict, List, Union
 
 from dataclasses import dataclass, field
 
-from utils import time_to_str
+from packages.utils.utils import time_to_str
 
 _log = logging.getLogger(__name__)
 
 RowDictData = Dict[str, str]
-CONFIG_FILE_PATH = "/home/fjr0p1/PycharmProjects/worktime/config.json"
+
+MAIN_FILE_PATH = sys.modules['__main__'].__file__
+assert MAIN_FILE_PATH is not None
+MAIN_DIR = Path(MAIN_FILE_PATH).parent
+
+DEFAULT_DB_PATH = f"{MAIN_DIR}/test_worktime.db"
+CONFIG_FILE_PATH = f"{MAIN_DIR}/config.json"
+LOG_FILE_PATH = f"{MAIN_DIR}/worktime.log"
 DEFAULT_WORKDAY_TIMEDELTA = dt.timedelta(hours=8)
 ANY_DATE = dt.date(2023, 1, 1)
 DATE_STRING_MASK = "%d.%m.%Y"

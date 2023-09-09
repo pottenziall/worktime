@@ -1,14 +1,10 @@
 import json
 import logging
-from contextlib import contextmanager
-from typing import Generator
 
 from sqlalchemy import Column, Text, create_engine
-from sqlalchemy.orm import Session, DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase
 
-from constants import WorkDay
-
-DEFAULT_DB_PATH = "/home/fjr0p1/PycharmProjects/worktime/test_worktime.db"
+from packages.constants import WorkDay, DEFAULT_DB_PATH
 
 _log = logging.getLogger(__name__)
 
@@ -34,23 +30,8 @@ class Worktime(Base):
 
 
 # TODO: add sqlalchemy echo to the settings window
-engine = create_engine(f"sqlite:///{DEFAULT_DB_PATH}")  # , echo=True)
-Base.metadata.create_all(engine)
-
-
-@contextmanager
-def session_scope() -> Generator[Session, None, None]:
-    """Provides a transactional scope around a series of operations."""
-    session = Session(engine, expire_on_commit=False)
-    try:
-        yield session
-        session.commit()
-    except Exception:
-        _log.exception("Session error")
-        session.rollback()
-        raise
-    finally:
-        session.close()
+sqlite_engine = create_engine(f"sqlite:///{DEFAULT_DB_PATH}")  # , echo=True)
+Base.metadata.create_all(sqlite_engine)
 
 
 if __name__ == "__main__":

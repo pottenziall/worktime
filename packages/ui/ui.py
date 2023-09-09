@@ -7,9 +7,8 @@ from typing import Dict, List, Optional, Union, Any, Protocol, Callable
 
 from dataclasses import dataclass
 
-import constants
-import logging_utils
-import utils
+from packages import constants
+from packages.utils import utils, logging_utils
 
 _log = logging.getLogger("ui")
 
@@ -39,9 +38,7 @@ class UserInterface(Protocol):
     def fill_main_table(self, rows: List[Dict[str, Any]]) -> None:
         pass
 
-    def set_table_focus(
-        self, table: ttk.Treeview, focus_item: Optional[str] = None
-    ) -> None:
+    def set_table_focus(self, table: ttk.Treeview, focus_item: Optional[str] = None) -> None:
         pass
 
     def get_variable(self, name: str) -> tk.Variable:
@@ -63,7 +60,7 @@ class TableColumn:
 
 
 class Window(UserInterface):
-    def __init__(self, master: tk.Tk, **kwargs):
+    def __init__(self, master: tk.Tk, **kwargs) -> None:
         self.master: tk.Tk = master
         self._default_input_value: Optional[str] = None
         self._table_column_params: Optional[Dict[str, List[TableColumn]]] = None
@@ -110,23 +107,17 @@ class Window(UserInterface):
                 table_columns[table] = table_column
             return table_columns
         except Exception:
-            _log.exception(
-                f"Resolving table columns failed. Incorrect input values: {table_column_params}"
-            )
+            _log.exception(f"Resolving table columns failed. Incorrect input values: {table_column_params}")
             raise
 
     def _get_table_column_params(self, table: ttk.Treeview) -> List[TableColumn]:
         table_name = table.winfo_name()
         assert self._table_column_params is not None, "No table column params found"
         if table_name not in self._table_column_params:
-            raise AssertionError(
-                f"There are no params provided for the table: {table_name}"
-            )
+            raise AssertionError(f"There are no params provided for the table: {table_name}")
         return self._table_column_params[table_name]
 
-    def _check_table_column_params_compatibility(
-        self, table: ttk.Treeview, *, workday: constants.WorkDay
-    ) -> bool:
+    def _check_table_column_params_compatibility(self, table: ttk.Treeview, *, workday: constants.WorkDay) -> bool:
         table_columns = self._get_table_column_params(table)
         values_to_check = [column.iid for column in table_columns]
         values_to_check.append("color")
@@ -154,13 +145,9 @@ class Window(UserInterface):
     #     _log.warning("No data received from the database")
 
     @staticmethod
-    def _insert_summaries(
-        table: ttk.Treeview, target: str, columns: List[str], values: List[Dict]
-    ) -> None:
+    def _insert_summaries(table: ttk.Treeview, target: str, columns: List[str], values: List[Dict]) -> None:
         summary_targets = {row_values[target] for row_values in values}
-        summaries: Dict[str, List] = {
-            summary_target: [] for summary_target in summary_targets
-        }
+        summaries: Dict[str, List] = {summary_target: [] for summary_target in summary_targets}
         for row_values in values:
             summary_values = [row_values[column] for column in columns]
             summaries[row_values[target]].append(summary_values)
@@ -178,9 +165,7 @@ class Window(UserInterface):
             table.insert(week, tk.END, iid=f"summary{week}", values=result)
         table.update()
 
-    def _insert_to_table(
-        self, table: ttk.Treeview, *, parents: List[str], rows_values: List[Dict]
-    ) -> None:
+    def _insert_to_table(self, table: ttk.Treeview, *, parents: List[str], rows_values: List[Dict]) -> None:
         self.clear_table(table)
         columns = table.config("columns")[-1]
         try:
@@ -194,14 +179,7 @@ class Window(UserInterface):
 
                     if key == parents[-1]:
                         values = [row_values[column] for column in columns]
-                        table.insert(
-                            item,
-                            tk.END,
-                            iid=values[0],
-                            values=values,
-                            open=True,
-                            tags=row_values["color"],
-                        )
+                        table.insert(item, tk.END, iid=values[0], values=values, open=True, tags=row_values["color"])
                 table.update()
         except Exception:
             _log.exception("Failed to fill the table")
@@ -209,23 +187,10 @@ class Window(UserInterface):
 
     # TODO: focus on fresh added line
     def _fill_table(
-        self,
-            rows: List[Dict[str, object]],
-        *,
-        table: ttk.Treeview,
-        focus_date: Optional[date] = None,
+            self, rows: List[Dict[str, object]], *, table: ttk.Treeview, focus_date: Optional[date] = None
     ) -> None:
-        self._insert_to_table(
-            table=self._main_table,
-            parents=["month", "week"],
-            rows_values=rows,
-        )
-        self._insert_summaries(
-            table=self._main_table,
-            target="week",
-            columns=constants.SUMMARY_COLUMNS,
-            values=rows,
-        )
+        self._insert_to_table(table=self._main_table, parents=["month", "week"], rows_values=rows)
+        self._insert_summaries(table=self._main_table, target="week", columns=constants.SUMMARY_COLUMNS, values=rows)
         _log.debug(f"{len(rows)} rows from database have been loaded into '{table.winfo_name()}' table")
         if focus_date is not None:
             focus_item = utils.date_to_str(focus_date, constants.DATE_STRING_MASK)
@@ -233,9 +198,7 @@ class Window(UserInterface):
         else:
             self.set_table_focus(table)
 
-    def set_table_focus(
-        self, table: ttk.Treeview, focus_item: Optional[str] = None
-    ) -> None:
+    def set_table_focus(self, table: ttk.Treeview, focus_item: Optional[str] = None) -> None:
         if focus_item and not table.exists(focus_item):
             _log.warning(f"Focusing on a non-existing table item: {focus_item}")
             focus_item = table.get_children()[-1]
@@ -254,9 +217,7 @@ class Window(UserInterface):
 
     @staticmethod
     def ask_delete(value: str) -> bool:
-        return messagebox.askyesno(
-            title="Warning", message=f"Are you sure to delete from database:\n{value}?"
-        )
+        return messagebox.askyesno(title="Warning", message=f"Are you sure to delete from database:\n{value}?")
 
     @staticmethod
     def clear_table(table: ttk.Treeview):
@@ -266,9 +227,7 @@ class Window(UserInterface):
 
     def _init_ui(self) -> None:
         _log.debug("Building UI")
-        main_frame = ttk.LabelFrame(
-            self.master, text="Please, input date and time marks"
-        )
+        main_frame = ttk.LabelFrame(self.master, text="Please, input date and time marks")
         main_frame.pack(padx=15, pady=15, fill="both", expand=True)
         main_frame.rowconfigure(0, weight=1, minsize=150)
         main_frame.rowconfigure(1, weight=18, minsize=400)
@@ -288,9 +247,7 @@ class Window(UserInterface):
         if value is not None:
             self._default_input_value = value
         if self._default_input_value is None:
-            raise AssertionError(
-                f"Default input value must be received from a controller class"
-            )
+            raise AssertionError(f"Default input value must be received from a controller class")
         self.input.delete(0, tk.END)
         for i in self._default_input_value + " ":
             self.input.insert(tk.END, i)
@@ -303,21 +260,13 @@ class Window(UserInterface):
         _log.debug("Initialize input panel")
         frame = ttk.Frame(master)
         frame.grid(row=0, column=0, sticky="nsew")
-        self.input = ttk.Entry(
-            frame,
-            width=60,
-            font="Arial 19",
-        )
+        self.input = ttk.Entry(frame, width=60, font="Arial 19")
         self.input.pack(padx=10, fill="both", expand=True)
         self.input.bind("<Return>", self._submit_input_value)
         self.input.focus_set()
 
         self.submit_button = ttk.Button(
-            frame,
-            text="SUBMIT",
-            style="TButton",
-            width=20,
-            command=self._submit_input_value,
+            frame, text="SUBMIT", style="TButton", width=20, command=self._submit_input_value
         )
         self.submit_button.pack(pady=20, ipady=20)
 
@@ -357,9 +306,7 @@ class Window(UserInterface):
         _log.debug("Initialize main table")
         frame = ttk.Frame(master)
         frame.grid(row=1, column=0, sticky="nsew")
-        self._table_column_params = self._resolve_table_column_params(
-            TABLE_COLUMN_PARAMS
-        )
+        self._table_column_params = self._resolve_table_column_params(TABLE_COLUMN_PARAMS)
         self._init_main_table(frame)
 
     def _toggle_table_data_view(self, table: ttk.Treeview) -> None:
@@ -410,10 +357,7 @@ class Window(UserInterface):
         edit_window = EditWindow(root=self.master)
         edit_window.insert_to_entry(value_to_edit)
         self.master.wait_window(edit_window.top_level)
-        if (
-            edit_window.returned_value
-            and not value_to_edit == edit_window.returned_value
-        ):
+        if edit_window.returned_value and not value_to_edit == edit_window.returned_value:
             self.get_variable("edited_table_row").set(edit_window.returned_value)
         # previous_date = values[0]
         # current_date = edit_window.returned_value.split()[0]
@@ -441,37 +385,24 @@ class Window(UserInterface):
         frame = ttk.Frame(master)
         frame.grid(row=2, column=0, sticky="nsew")
 
-        self.load_button = ttk.Button(
-            frame, text="LOAD ALL", width=15, command=self._fill_table_with_all_db_data
-        )
+        self.load_button = ttk.Button(frame, text="LOAD ALL", width=15, command=self._fill_table_with_all_db_data)
         self.load_button.grid(row=0, column=0, padx=10, pady=25)
 
         self.toggle_button = ttk.Button(
-            frame,
-            text="TOGGLE VIEW",
-            width=15,
-            command=lambda: self._toggle_table_data_view(self._main_table),
+            frame, text="TOGGLE VIEW", width=15, command=lambda: self._toggle_table_data_view(self._main_table)
         )
         self.toggle_button.grid(row=0, column=1, padx=10, pady=25)
 
-        self.settings_button = ttk.Button(
-            frame, text="SETTINGS", width=15, command=self._change_settings
-        )
+        self.settings_button = ttk.Button(frame, text="SETTINGS", width=15, command=self._change_settings)
         self.settings_button.grid(row=0, column=2, padx=10, pady=25)
 
         self.edit_button = ttk.Button(
-            frame,
-            text="EDIT",
-            width=15,
-            command=lambda: self._edit_table_row(self._main_table),
+            frame, text="EDIT", width=15, command=lambda: self._edit_table_row(self._main_table)
         )
         self.edit_button.grid(row=0, column=3, padx=10)
 
         self.delete_button = ttk.Button(
-            frame,
-            text="DELETE",
-            width=15,
-            command=lambda: self._delete_selected_table_rows(self._main_table),
+            frame, text="DELETE", width=15, command=lambda: self._delete_selected_table_rows(self._main_table)
         )
         self.delete_button.grid(row=0, column=4, padx=10)
 
@@ -480,9 +411,7 @@ class Window(UserInterface):
         frame = ttk.Frame(master)
         frame.grid(row=3, column=0, sticky="nsew")
 
-        self.text = scrolledtext.ScrolledText(
-            frame, width=90, height=6, font="Arial 13"
-        )
+        self.text = scrolledtext.ScrolledText(frame, width=90, height=6, font="Arial 13")
         self.text.pack(fill="both", expand=True)
         self.text_handler = logging_utils.WidgetLogger(self.text, self.master)
         root_logger = logging.getLogger()
@@ -538,11 +467,7 @@ class EditWindow(ModalWindow):
         self.edit_entry.pack(pady=25)
 
         submit_b = tk.Button(
-            master,
-            text="SUBMIT",
-            width=20,
-            height=3,
-            command=lambda: self._submit(self.edit_entry.get()),
+            master, text="SUBMIT", width=20, height=3, command=lambda: self._submit(self.edit_entry.get())
         )
         submit_b.pack(padx=10, pady=15, anchor="s")
 
@@ -578,11 +503,7 @@ class SettingsWindow(ModalWindow):
             checkbutton.pack(padx=15, pady=2, anchor="w")
             variables.append(var)
         button = tk.Button(
-            master,
-            text="SAVE",
-            width=20,
-            height=2,
-            command=lambda: self._submit(self._get_states(variables)),
+            master, text="SAVE", width=20, height=2, command=lambda: self._submit(self._get_states(variables))
         )
         button.pack(side="bottom", pady=20, anchor="n")
 
