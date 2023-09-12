@@ -23,6 +23,7 @@ _log = logging.getLogger("main")
 # strict_equality=True
 # strict=True
 # verbosity=5
+# TODO: Add 'refresh input value=True' option to config
 # TODO: select table columns in settings
 # TODO: add possibility to write >1 day info on time
 # TODO: display error and warnings at start

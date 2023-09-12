@@ -208,7 +208,7 @@ class WorkDay:
             return "green"
         return "default"
 
-    def as_dict(self) -> Dict[str, object]:
+    def as_dict(self) -> Dict[str, Union[dt.timedelta, str]]:
         data = dict(
             week="week" + " " + str(self.date.isocalendar()[1]),
             month=self.date.strftime("%B %Y"),
@@ -276,3 +276,29 @@ class WorkDay:
             return worktime - DEFAULT_WORKDAY_TIMEDELTA
         else:
             return dt.timedelta(seconds=0)
+
+
+@dataclass(frozen=True)
+class WorkWeek:
+    workdays: List[WorkDay] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        week_first = self.workdays[0].as_dict()["week"]
+        for workday in self.workdays:
+            week = workday.as_dict()["week"]
+            assert week == week_first, f"Week Workdays have different week number: {week_first} != {week}"
+
+    @property
+    def summary(self) -> Dict[str, List[str]]:
+        week_summary = ["Summary:"]
+        for column in SUMMARY_COLUMNS:
+            column_values = [workday_values.as_dict()[column] for workday_values in self.workdays]
+            column_sum = sum(column_values, start=dt.timedelta(0))
+            assert isinstance(column_sum, dt.timedelta)
+            hours, remainder = divmod(int(column_sum.total_seconds()), 3600)
+            minutes, seconds = divmod(remainder, 60)
+            result = f"{hours}h {minutes}m" if minutes else f"{hours}h"
+            week_summary.append(result)
+        week = self.workdays[0].as_dict()["week"]
+        assert isinstance(week, str)
+        return {week: week_summary}
