@@ -32,7 +32,14 @@ class TestWorkWeek:
     def test_should_print_summary_properly(self, workdays: List[WorkDay]) -> None:
         workweek = WorkWeek(workdays)
         assert workweek.workdays == workdays
-        assert workweek.summary == {'week 37': ['Summary:', '32h', '3h', '3h', '38h']}
+        assert workweek.summary == {
+            'iid': 'summary_week 37 2023',
+            'overtime': '3h',
+            'pauses': '3h',
+            'week': 'week 37 2023',
+            'whole_time': '38h',
+            'worktime': '32h',
+        }
 
     @pytest.mark.parametrize("workdays", [WORKDAYS_DIFFERENT_WEEKS])
     def test_should_raise_assertion_error_when_workdays_from_different_weeks(self, workdays: List[WorkDay]) -> None:

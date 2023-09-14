@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta, date, time
+from datetime import datetime, date, time
 from typing import Any, Dict, List
 
 import pytest
@@ -198,15 +198,16 @@ class TestConvertWorkday:
                 [],
                 DayType.NORMAL,
                 {
-                    "week": "week 6",
+                    "iid": "09.02.2023",
+                    "week": "week 6 2023",
                     "month": "February 2023",
                     "date": "09.02.2023",
-                    "weekday": 4,
-                    "worktime": timedelta(hours=0),
-                    "pause": timedelta(hours=0),
-                    "overtime": timedelta(hours=0),
-                    "whole_time": timedelta(hours=0),
-                    "time_marks": [],
+                    "weekday": "4",
+                    "worktime": '0:00:00',
+                    "pauses": '0:00:00',
+                    "overtime": '0:00:00',
+                    "whole_time": '0:00:00',
+                    "time_marks": "",
                     "color": "red",
                     "day_type": DayType.NORMAL.value,
                 },
@@ -216,15 +217,16 @@ class TestConvertWorkday:
                 [time(8), time(12), time(13), time(18)],
                 DayType.NORMAL,
                 {
-                    "week": "week 52",
+                    "iid": "01.01.2023",
+                    "week": "week 52 2023",
                     "month": "January 2023",
                     "date": "01.01.2023",
-                    "weekday": 7,
-                    "worktime": timedelta(hours=8),
-                    "pause": timedelta(hours=1),
-                    "overtime": timedelta(hours=1),
-                    "whole_time": timedelta(hours=10),
-                    "time_marks": ["08:00", "12:00", "13:00", "18:00"],
+                    "weekday": "7",
+                    "worktime": '8:00:00',
+                    "pauses": '1:00:00',
+                    "overtime": '1:00:00',
+                    "whole_time": '10:00:00',
+                    "time_marks": "08:00 12:00 13:00 18:00",
                     "color": "green",
                     "day_type": DayType.NORMAL.value,
                 },
@@ -234,15 +236,16 @@ class TestConvertWorkday:
                 [time(8), time(16)],
                 DayType.VACATION,
                 {
-                    "week": "week 1",
+                    "iid": "05.01.2023",
+                    "week": "week 1 2023",
                     "month": "January 2023",
                     "date": "05.01.2023",
-                    "weekday": 4,
-                    "worktime": timedelta(hours=8),
-                    "pause": timedelta(hours=0),
-                    "overtime": timedelta(hours=0),
-                    "whole_time": timedelta(hours=8),
-                    "time_marks": ["08:00", "16:00"],
+                    "weekday": "4",
+                    "worktime": '8:00:00',
+                    "pauses": '0:00:00',
+                    "overtime": '0:00:00',
+                    "whole_time": '8:00:00',
+                    "time_marks": "08:00 16:00",
                     "color": "default",
                     "day_type": DayType.VACATION.value,
                 },
@@ -254,7 +257,7 @@ class TestConvertWorkday:
     ) -> None:
         workday = WorkDay(date=date_ins, times=times, day_type=day_type)
         dict_values = workday.as_dict()
-        assert len(dict_values) == 11
+        assert len(dict_values) == 12
         for k, v in dict_values.items():
             assert results[k] == v
 

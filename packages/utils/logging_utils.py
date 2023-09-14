@@ -3,7 +3,7 @@ from tkinter import Tk, constants, scrolledtext
 
 
 class WidgetLogger(logging.Handler):
-    def __init__(self, widget: scrolledtext.ScrolledText, root_instance: Tk):
+    def __init__(self, widget: scrolledtext.ScrolledText, root_instance: Tk) -> None:
         logging.Handler.__init__(self)
         self.setLevel(logging.DEBUG)
         self.setFormatter(
@@ -19,7 +19,7 @@ class WidgetLogger(logging.Handler):
         # self.red = self.widget.tag_configure("red", foreground="red")
         self.root_instance = root_instance
 
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord) -> None:
         if self.root_instance.children:
             self.widget.config(state="normal")
             self.widget.insert(

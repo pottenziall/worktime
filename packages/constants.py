@@ -5,7 +5,7 @@ import re
 import sys
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Dict, List, Union, Tuple
 
 from dataclasses import dataclass, field
 
@@ -62,7 +62,6 @@ TABLE_ROW_TYPES = {
     "week": r"w\d{1,2}",
     "summary": r"Summary",
 }
-SUMMARY_COLUMNS = ["worktime", "pause", "overtime", "whole_time"]
 
 
 class RowType(enum.Enum):
@@ -208,19 +207,20 @@ class WorkDay:
             return "green"
         return "default"
 
-    def as_dict(self) -> Dict[str, Union[dt.timedelta, str]]:
+    def as_dict(self) -> Dict[str, str]:
         data = dict(
-            week="week" + " " + str(self.date.isocalendar()[1]),
+            week=self.week,
             month=self.date.strftime("%B %Y"),
             date=self.date.strftime(DATE_STRING_MASK),
-            weekday=self.date.isocalendar()[2],
-            worktime=self.worktime,
-            pause=self.pauses,
-            overtime=self.overtime,
-            whole_time=self.whole_time,
-            time_marks=[time_mark.strftime(TIME_STRING_MASK) for time_mark in self.times],
+            weekday=str(self.date.isocalendar()[2]),
+            worktime=str(self.worktime),
+            pauses=str(self.pauses),
+            overtime=str(self.overtime),
+            whole_time=str(self.whole_time),
+            time_marks=" ".join([time_mark.strftime(TIME_STRING_MASK) for time_mark in self.times]),
             color=self.color,
             day_type=self.day_type.value,
+            iid=self.date.strftime(DATE_STRING_MASK),
         )
         if self.worktime + self.pauses + self.overtime != self.whole_time:
             _log.critical(f"Sum (worktime + pauses + overtime) != whole time")
@@ -242,6 +242,12 @@ class WorkDay:
     def __str__(self) -> str:
         time_marks = time_to_str(self.times, TIME_STRING_MASK)
         return f'{self.date.strftime(DATE_STRING_MASK)} {time_marks} {self.day_type.value}'
+
+    def __gt__(self, other: "WorkDay") -> bool:
+        return self.date > other.date
+
+    def __lt__(self, other: "WorkDay") -> bool:
+        return self.date < other.date
 
     @property
     def whole_time(self) -> dt.timedelta:
@@ -277,28 +283,32 @@ class WorkDay:
         else:
             return dt.timedelta(seconds=0)
 
+    @property
+    def week(self) -> str:
+        return "week " + str(self.date.isocalendar()[1]) + " " + self.date.strftime("%Y")
+
 
 @dataclass(frozen=True)
 class WorkWeek:
     workdays: List[WorkDay] = field(default_factory=list)
+    summary_fields: Tuple[str, ...] = ("worktime", "pauses", "overtime", "whole_time")
 
     def __post_init__(self) -> None:
-        week_first = self.workdays[0].as_dict()["week"]
+        week_first = self.workdays[0].week
         for workday in self.workdays:
-            week = workday.as_dict()["week"]
+            week = workday.week
             assert week == week_first, f"Week Workdays have different week number: {week_first} != {week}"
 
     @property
-    def summary(self) -> Dict[str, List[str]]:
-        week_summary = ["Summary:"]
-        for column in SUMMARY_COLUMNS:
-            column_values = [workday_values.as_dict()[column] for workday_values in self.workdays]
-            column_sum = sum(column_values, start=dt.timedelta(0))
-            assert isinstance(column_sum, dt.timedelta)
-            hours, remainder = divmod(int(column_sum.total_seconds()), 3600)
+    def summary(self) -> Dict[str, str]:
+        week = self.workdays[0].week
+        week_summary: Dict[str, str] = dict(week=week, iid=f"summary_{week}")
+
+        for summary_field in self.summary_fields:
+            field_values = [getattr(workday, summary_field) for workday in self.workdays]
+            field_sum = sum(field_values, start=dt.timedelta(0))
+            hours, remainder = divmod(int(field_sum.total_seconds()), 3600)
             minutes, seconds = divmod(remainder, 60)
             result = f"{hours}h {minutes}m" if minutes else f"{hours}h"
-            week_summary.append(result)
-        week = self.workdays[0].as_dict()["week"]
-        assert isinstance(week, str)
-        return {week: week_summary}
+            week_summary[summary_field] = result
+        return week_summary

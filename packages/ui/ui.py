@@ -3,20 +3,21 @@ import logging
 import tkinter as tk
 from datetime import date
 from tkinter import messagebox, scrolledtext, ttk
-from typing import Dict, List, Optional, Union, Any, Protocol, Callable
+from typing import Dict, List, Optional, Union, Any, Protocol, Callable, Sequence
 
 from dataclasses import dataclass
 
-from packages import constants
+from packages.constants import CONFIG_FILE_PATH, DATE_STRING_MASK, RowType
 from packages.utils import utils, logging_utils
 
 _log = logging.getLogger("ui")
 
+DEFAULT_INPUT_VALUE = str(date.today().strftime(DATE_STRING_MASK))
 TABLE_COLUMN_PARAMS: Dict[str, List[Dict[str, Any]]] = {
     "workdays": [
         {"iid": "date", "width": 120, "text": "date"},
         {"iid": "worktime", "width": 100, "text": "worktime"},
-        {"iid": "pause", "width": 100, "text": "pause"},
+        {"iid": "pauses", "width": 100, "text": "pauses"},
         {"iid": "overtime", "width": 100, "text": "overtime"},
         # {"iid": "whole_time", "width": 120, "text": "whole time"},
         {"iid": "time_marks", "width": 400, "text": "time marks"},
@@ -25,6 +26,7 @@ TABLE_COLUMN_PARAMS: Dict[str, List[Dict[str, Any]]] = {
 }
 
 
+# TODO: enable/disable log window in settings
 # TODO: settings: change font size
 # TODO: edit exist entries
 # TODO: undo support
@@ -44,7 +46,7 @@ class UserInterface(Protocol):
     def get_variable(self, name: str) -> tk.Variable:
         pass
 
-    def set_input_validator(self, validator_func: Callable) -> None:
+    def set_input_validator(self, validator_func: Callable[[str, str, str, str], bool]) -> None:
         pass
 
     def insert_default_value(self, value: str) -> None:
@@ -67,7 +69,6 @@ class Window(UserInterface):
         self._set_window_name_and_geometry(master, **kwargs)
         self._init_ui()
         self._variables: List[tk.Variable] = self._init_variables()
-        # self._do_checks_and_fill_main_table(self._table)
 
     @staticmethod
     def _init_variables() -> List[tk.Variable]:
@@ -117,86 +118,45 @@ class Window(UserInterface):
             raise AssertionError(f"There are no params provided for the table: {table_name}")
         return self._table_column_params[table_name]
 
-    def _check_table_column_params_compatibility(self, table: ttk.Treeview, *, workday: constants.WorkDay) -> bool:
-        table_columns = self._get_table_column_params(table)
-        values_to_check = [column.iid for column in table_columns]
-        values_to_check.append("color")
-        workday_values = workday.as_dict()
-        for value in values_to_check:
-            if value not in workday_values:
-                _log.critical(
-                    f"""Table has "{value}" column but WorkDay (db) doesn't provide a value for that.
-                    WorkDay values: {workday_values.keys()}"""
-                )
-                return False
-        return True
-
-    def fill_main_table(self, rows: List[Dict[str, object]]) -> None:
-        self._fill_table(rows, table=self._main_table)
-
-    # """Checks that WorkDay (db) contains all the data needed to fill the table.
-    # Fills main table in case of successful verification"""
-    # TODO: uncomment
-    # workdays = get_db_table_data(limit=1)
-    # if workdays:
-    #     if self._check_table_column_params_compatibility(table, workday=workdays[0]):
-    #         self._fill_table(table)
-    # else:
-    #     _log.warning("No data received from the database")
+    # TODO: focus on fresh added line
+    def fill_main_table(
+            self, rows: List[Dict[str, str]], parents: Sequence[str] = ("",), focus_date: Optional[date] = None
+    ) -> None:
+        table = self._main_table
+        try:
+            self._insert_to_table(table=self._main_table, parents=parents, sorted_rows=rows)
+            if focus_date is not None:
+                focus_item = utils.date_to_str(focus_date, DATE_STRING_MASK)
+                self.set_table_focus(table, focus_item)
+            else:
+                self.set_table_focus(table)
+        except Exception:
+            _log.exception(f"Failed to fill main table")
 
     @staticmethod
-    def _insert_summaries(table: ttk.Treeview, target: str, columns: List[str], values: List[Dict]) -> None:
-        summary_targets = {row_values[target] for row_values in values}
-        summaries: Dict[str, List] = {summary_target: [] for summary_target in summary_targets}
-        for row_values in values:
-            summary_values = [row_values[column] for column in columns]
-            summaries[row_values[target]].append(summary_values)
-
-        for week, summary in summaries.items():
-            result = ["Summary:"]
-            for i in range(len(summary[0])):
-                s = summary[0][i]
-                for item in summary[1:]:
-                    s += item[i]
-                hours, remainder = divmod(int(s.total_seconds()), 3600)
-                minutes, seconds = divmod(remainder, 60)
-                res = f"{hours}h {minutes}m" if minutes else f"{hours}h"
-                result.append(res)
-            table.insert(week, tk.END, iid=f"summary{week}", values=result)
-        table.update()
-
-    def _insert_to_table(self, table: ttk.Treeview, *, parents: List[str], rows_values: List[Dict]) -> None:
-        self.clear_table(table)
-        columns = table.config("columns")[-1]
-        try:
-            for i, key in enumerate(parents):
-                parent_key = parents[i - 1] if i > 0 else ""
-                for j, row_values in enumerate(rows_values):
-                    item = row_values[key]
-                    parent = row_values[parent_key] if parent_key else ""
-                    if not table.exists(item):
-                        table.insert(parent, tk.END, iid=item, text=item, open=True)
-
-                    if key == parents[-1]:
-                        values = [row_values[column] for column in columns]
-                        table.insert(item, tk.END, iid=values[0], values=values, open=True, tags=row_values["color"])
-                table.update()
-        except Exception:
-            _log.exception("Failed to fill the table")
-            self.clear_table(table)
-
-    # TODO: focus on fresh added line
-    def _fill_table(
-            self, rows: List[Dict[str, object]], *, table: ttk.Treeview, focus_date: Optional[date] = None
+    def _insert_to_table(
+            table: ttk.Treeview, *, parents: Sequence[str] = ("",), sorted_rows: List[Dict[str, str]]
     ) -> None:
-        self._insert_to_table(table=self._main_table, parents=["month", "week"], rows_values=rows)
-        self._insert_summaries(table=self._main_table, target="week", columns=constants.SUMMARY_COLUMNS, values=rows)
-        _log.debug(f"{len(rows)} rows from database have been loaded into '{table.winfo_name()}' table")
-        if focus_date is not None:
-            focus_item = utils.date_to_str(focus_date, constants.DATE_STRING_MASK)
-            self.set_table_focus(table, focus_item)
-        else:
-            self.set_table_focus(table)
+        for row in sorted_rows:
+            for i, parent in enumerate(parents):
+                parent_key = row[parents[i - 1]] if i else ""
+                if not table.exists(row[parent]):
+                    table.insert(parent_key, tk.END, iid=row[parent], text=row[parent], open=True)
+            values = []
+            for column in table.config("columns")[-1]:
+                if row.get(column, None) is None:
+                    values.append("-")
+                else:
+                    values.append(row[column])
+            table.insert(
+                row[parents[-1]],
+                tk.END,
+                iid=row.get("iid") or values[0],
+                values=values,
+                open=True,
+                tags=row.get("color") or "default",
+            )
+        table.update()
 
     def set_table_focus(self, table: ttk.Treeview, focus_item: Optional[str] = None) -> None:
         if focus_item and not table.exists(focus_item):
@@ -219,8 +179,8 @@ class Window(UserInterface):
     def ask_delete(value: str) -> bool:
         return messagebox.askyesno(title="Warning", message=f"Are you sure to delete from database:\n{value}?")
 
-    @staticmethod
-    def clear_table(table: ttk.Treeview):
+    def clear_table(self, table: Optional[ttk.Treeview] = None) -> None:
+        table = table if table else self._main_table
         for i in table.get_children():
             table.delete(i)
         table.update()
@@ -243,7 +203,7 @@ class Window(UserInterface):
         self.b_style = ttk.Style()
         self.b_style.configure("TButton", height=2, font="Arial 14")
 
-    def insert_default_value(self, value: Optional[str] = None) -> None:
+    def insert_default_value(self, value: Optional[str] = DEFAULT_INPUT_VALUE) -> None:
         if value is not None:
             self._default_input_value = value
         if self._default_input_value is None:
@@ -252,7 +212,7 @@ class Window(UserInterface):
         for i in self._default_input_value + " ":
             self.input.insert(tk.END, i)
 
-    def set_input_validator(self, validator_func: Callable) -> None:
+    def set_input_validator(self, validator_func: Callable[[str, str, str, str], bool]) -> None:
         vcmd = (self.master.register(validator_func), "%P", "%S", "%d", "%i")
         self.input.config(validatecommand=vcmd, validate="key")
 
@@ -280,6 +240,7 @@ class Window(UserInterface):
 
     def _init_main_table(self, master: ttk.Frame) -> None:
         name = "workdays"
+        assert self._table_column_params is not None
         column_params = self._table_column_params[name]
         style = ttk.Style()
         style.configure("Treeview", rowheight=22, font=("Calibri", 11))
@@ -339,7 +300,7 @@ class Window(UserInterface):
             return {
                 sel: val
                 for sel, val in selected.items()
-                if constants.RowType.from_string("".join(val)) == constants.RowType.DATA
+                if RowType.from_string("".join(val)) == RowType.DATA
             }
         return selected
 
@@ -368,7 +329,7 @@ class Window(UserInterface):
         _log.debug("Value has not changed")
         # self.root.wait_visibility(self.root)
 
-    def _delete_selected_table_rows(self, table: ttk.Treeview):
+    def _delete_selected_table_rows(self, table: ttk.Treeview) -> None:
         selected = self._get_selected(table, data_rows_only=True)
         if selected is not None:
             # message = f"[{utils.datetime_to_str(found_in_db[0].date)}, {utils.time_to_str(found_in_db[0].times)}]"
@@ -517,7 +478,7 @@ class SettingsWindow(ModalWindow):
     def _submit(self, value: Union[str, Dict]) -> None:
         self.returned_value = value
         self._destroy_widgets()
-        with open(constants.CONFIG_FILE_PATH, "w+", encoding="utf8") as f:
+        with open(CONFIG_FILE_PATH, "w+", encoding="utf8") as f:
             json.dump(value, f)
 
 
