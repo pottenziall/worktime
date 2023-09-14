@@ -244,13 +244,9 @@ class Window(UserInterface):
         column_params = self._table_column_params[name]
         style = ttk.Style()
         style.configure("Treeview", rowheight=22, font=("Calibri", 11))
+        columns = [c.iid for c in column_params]
         self._main_table = ttk.Treeview(
-            master,
-            name=name,
-            columns=[c.iid for c in column_params],
-            height=20,
-            style="Treeview",
-            show=["tree", "headings"],
+            master, name=name, columns=columns, height=20, style="Treeview", show=["tree", "headings"]
         )
         y = ttk.Scrollbar(master, orient="vertical", command=self._main_table.yview)
         y.pack(side="right", fill="y")
@@ -297,11 +293,7 @@ class Window(UserInterface):
             return None
         selected = {sel: table.item(sel, option="values") for sel in select}
         if data_rows_only:
-            return {
-                sel: val
-                for sel, val in selected.items()
-                if RowType.from_string("".join(val)) == RowType.DATA
-            }
+            return {sel: val for sel, val in selected.items() if RowType.from_string("".join(val)) == RowType.DATA}
         return selected
 
     def _edit_table_row(self, table: ttk.Treeview) -> None:
