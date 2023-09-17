@@ -7,14 +7,24 @@ from typing import Dict, List, Optional, Union, Any, Protocol, Callable, Sequenc
 
 from dataclasses import dataclass
 
-from packages.constants import CONFIG_FILE_PATH, DATE_STRING_MASK, RowType
+from packages.constants import (
+    CONFIG_FILE_PATH,
+    DATE_STRING_MASK,
+    DATE_PATTERN,
+    RowType,
+    UiRow,
+    UiTableConfig,
+    UiTableColumn,
+    TableColumnParams,
+)
 from packages.utils import utils, logging_utils
 
 _log = logging.getLogger("ui")
 
+MAIN_TABLE_NAME = "workdays"
 DEFAULT_INPUT_VALUE = str(date.today().strftime(DATE_STRING_MASK))
 TABLE_COLUMN_PARAMS: Dict[str, List[Dict[str, Any]]] = {
-    "workdays": [
+    MAIN_TABLE_NAME: [
         {"iid": "date", "width": 120, "text": "date"},
         {"iid": "worktime", "width": 100, "text": "worktime"},
         {"iid": "pauses", "width": 100, "text": "pauses"},
@@ -24,6 +34,24 @@ TABLE_COLUMN_PARAMS: Dict[str, List[Dict[str, Any]]] = {
         {"iid": "day_type", "width": 90, "text": "day type", "anchor": "w"},
     ]
 }
+MAIN_TABLE_CONFIG = UiTableConfig(
+    MAIN_TABLE_NAME,
+    [
+        UiRow(RowType.DATA, rf"{DATE_PATTERN}"),
+        UiRow(RowType.MONTH, r"\w{,8} \d{4}"),
+        UiRow(RowType.WEEK, r"w\d{1,2}"),
+        UiRow(RowType.SUMMARY, r"Summary"),
+    ],
+    [
+        TableColumnParams(UiTableColumn.DATE, 120, "date"),
+        TableColumnParams(UiTableColumn.WORKTIME, 100, "worktime"),
+        TableColumnParams(UiTableColumn.PAUSES, 100, "pauses"),
+        TableColumnParams(UiTableColumn.OVERTIME, 120, "overtime"),
+        TableColumnParams(UiTableColumn.WHOLE_TIME, 100, "whole time"),
+        TableColumnParams(UiTableColumn.TIME_MARKS, 400, "time marks"),
+        TableColumnParams(UiTableColumn.DAY_TYPE, 90, "day type", "w"),
+    ],
+)
 
 
 # TODO: enable/disable log window in settings
@@ -239,14 +267,13 @@ class Window(UserInterface):
             table.heading(column.iid, text=column.text, anchor=column.anchor)
 
     def _init_main_table(self, master: ttk.Frame) -> None:
-        name = "workdays"
         assert self._table_column_params is not None
-        column_params = self._table_column_params[name]
+        column_params = self._table_column_params[MAIN_TABLE_NAME]
         style = ttk.Style()
         style.configure("Treeview", rowheight=22, font=("Calibri", 11))
         columns = [c.iid for c in column_params]
         self._main_table = ttk.Treeview(
-            master, name=name, columns=columns, height=20, style="Treeview", show=["tree", "headings"]
+            master, name=MAIN_TABLE_NAME, columns=columns, height=20, style="Treeview", show=["tree", "headings"]
         )
         y = ttk.Scrollbar(master, orient="vertical", command=self._main_table.yview)
         y.pack(side="right", fill="y")

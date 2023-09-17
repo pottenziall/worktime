@@ -2,7 +2,7 @@ import logging
 import re
 import tkinter
 from datetime import datetime
-from typing import List
+from typing import List, Dict
 
 from packages.constants import WorkWeek, WorkDay, LOG_FILE_PATH, DATE_STRING_MASK
 from packages.db.database_interface import WorktimeSqliteDbInterface
@@ -37,6 +37,7 @@ logging.basicConfig(
 
 class App:
     def __init__(self, *, user_interface: Window, db_if: WorktimeSqliteDbInterface) -> None:
+        self._data_buffer: Dict[str, WorkDay] = {}
         self._ui: Window = user_interface
         self._db_if: WorktimeSqliteDbInterface = db_if
         self._prepare_ui()
@@ -74,7 +75,7 @@ class App:
             _log.debug(f"{len(workdays)} rows from the database have been prepared")
             return weeks_workdays
         except Exception:
-            _log.exception(f"Failed to prepare data from the database")
+            _log.exception("Failed to prepare data from the database")
             return []
 
     def fill_ui_with_workdays(self, limit: int = MAX_ROW_READ_LIMIT) -> None:
@@ -83,13 +84,19 @@ class App:
             self._ui.clear_table()
             for week_workdays in weeks_workdays:
                 work_week = WorkWeek(week_workdays)
-                week_data = [workday.as_dict() for workday in work_week.workdays]
+                week_data = []
+                for workday in work_week.workdays:
+                    workday_data = workday.as_dict()
+                    iid = workday_data.get("iid", None)
+                    if iid is None:
+                        raise AssertionError("Workday data must include 'iid' key")
+                    self._data_buffer[iid] = workday
+                    week_data.append(workday_data)
                 self._ui.fill_main_table(week_data, parents=["month", "week"])
                 self._ui.fill_main_table([work_week.summary], parents=["week"])
-            _log.debug(f"All fetched database rows have been loaded into main table")
+            _log.debug("All fetched database rows have been loaded into main table")
         except Exception:
-            _log.exception(f"Failed to fill main table")
-
+            _log.exception("Failed to fill main table")
 
     def add_to_db(self, table_value: str) -> None:
         skip_update = False

@@ -33,6 +33,53 @@ NORMAL_WORKDAY_TIMES = [
     dt.datetime.strptime("08:00", TIME_STRING_MASK).time(),
     dt.datetime.strptime("16:00", TIME_STRING_MASK).time()
 ]
+UI_TABLE_COLUMNS = ["date", "worktime", "pauses", "overtime", "time_marks", "day_type"]
+
+
+class UiTableColumn(Enum):
+    DATE = "date"
+    WORKTIME = "worktime"
+    PAUSES = "pauses"
+    OVERTIME = "overtime"
+    WHOLE_TIME = "whole_time"
+    TIME_MARKS = "time_marks"
+    DAY_TYPE = "day_type"
+
+
+@dataclass(frozen=True)
+class TableColumnParams:
+    iid: UiTableColumn
+    width: int
+    text: str
+    anchor: str = "center"
+
+
+# TODO: rename to UiRowType
+class RowType(enum.Enum):
+    DATA = "data"
+    MONTH = "month"
+    WEEK = "week"
+    SUMMARY = "summary"
+
+    @classmethod
+    def from_string(cls, value: str) -> "RowType":
+        for iid_type, pattern in TABLE_ROW_TYPES.items():
+            if re.search(pattern, value):
+                return RowType(iid_type)
+        raise ValueError(f"Row not recognized: {value}")
+
+
+@dataclass
+class UiRow:
+    row_type: RowType
+    pattern: str
+
+
+@dataclass
+class UiTableConfig:
+    table_name: str
+    row_params: List[UiRow] = field(default_factory=list)
+    column_params: List[TableColumnParams] = field(default_factory=list)
 
 
 class DayType(Enum):
@@ -56,26 +103,13 @@ DAY_TYPE_PARAMS = [
     DayTypeParams(DayType.DAY_OFF, []),
     DayTypeParams(DayType.SICK, NORMAL_WORKDAY_TIMES),
 ]
+
 TABLE_ROW_TYPES = {
     "month": r"\w{,8} \d{4}",
     "data": rf"{DATE_PATTERN}",
     "week": r"w\d{1,2}",
     "summary": r"Summary",
 }
-
-
-class RowType(enum.Enum):
-    DATA = "data"
-    MONTH = "month"
-    WEEK = "week"
-    SUMMARY = "summary"
-
-    @classmethod
-    def from_string(cls, value: str) -> "RowType":
-        for iid_type, pattern in TABLE_ROW_TYPES.items():
-            if re.search(pattern, value):
-                return RowType(iid_type)
-        raise ValueError(f"Row not recognized: {value}")
 
 
 # TODO: Learn if class values checking after __init__ is needed
