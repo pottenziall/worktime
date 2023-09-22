@@ -1,13 +1,14 @@
+import datetime as dt
 import logging
 import re
 import tkinter
-from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Optional
 
-from packages.constants import WorkWeek, WorkDay, LOG_FILE_PATH, DATE_STRING_MASK
-from packages.db.database_interface import WorktimeSqliteDbInterface
+from packages.constants import LOG_FILE_PATH, WorkDay, DATE_STRING_MASK, DATE_PATTERN
+from packages.db.database_interface import WorktimeSqliteDbInterface, DbInterface
 from packages.db.models import sqlite_engine, Worktime
-from packages.ui.ui import Window
+from packages.ui.ui import Window, UserInterface, RowType, UiRow, UiTableConfig, UiTableColumn, TableColumnParams
+from packages.utils import utils
 
 _log = logging.getLogger("main")
 
@@ -25,6 +26,28 @@ _log = logging.getLogger("main")
 APP_NAME = "Timely"
 WINDOW_GEOMETRY = (1310, 900)
 MAX_ROW_READ_LIMIT = 10000
+MAIN_TABLE_NAME = "workdays"
+MAIN_TABLE_CONFIG = UiTableConfig(
+    MAIN_TABLE_NAME,
+    [
+        UiRow(RowType.DATA, rf"{DATE_PATTERN}"),
+        UiRow(RowType.MONTH, r"\w{,8} \d{4}"),
+        UiRow(RowType.WEEK, r"w\d{1,2}"),
+        UiRow(RowType.SUMMARY, r"Summary"),
+    ],
+    [
+        TableColumnParams(UiTableColumn.TREE, 170, ""),
+        TableColumnParams(UiTableColumn.DATE, 120, "date"),
+        TableColumnParams(UiTableColumn.WORKTIME, 100, "worktime"),
+        TableColumnParams(UiTableColumn.PAUSES, 100, "pauses"),
+        TableColumnParams(UiTableColumn.OVERTIME, 120, "overtime"),
+        # TableColumnParams(UiTableColumn.WHOLE_TIME, 100, "whole time"),
+        TableColumnParams(UiTableColumn.TIME_MARKS, 400, "time marks"),
+        TableColumnParams(UiTableColumn.DAY_TYPE, 90, "day type", "w"),
+    ],
+)
+TABLE_CONFIGS = {"main": MAIN_TABLE_CONFIG}
+
 
 file_handler = logging.FileHandler(LOG_FILE_PATH, "a", encoding="utf-8")
 logging.basicConfig(
@@ -36,10 +59,11 @@ logging.basicConfig(
 
 
 class App:
-    def __init__(self, *, user_interface: Window, db_if: WorktimeSqliteDbInterface) -> None:
+    def __init__(self, *, user_interface: UserInterface, db_if: DbInterface) -> None:
         self._data_buffer: Dict[str, WorkDay] = {}
-        self._ui: Window = user_interface
-        self._db_if: WorktimeSqliteDbInterface = db_if
+        self._item_to_focus: Optional[str] = None
+        self._ui = user_interface
+        self._db_if = db_if
         self._prepare_ui()
 
     def _prepare_ui(self) -> None:
@@ -81,19 +105,7 @@ class App:
     def fill_ui_with_workdays(self, limit: int = MAX_ROW_READ_LIMIT) -> None:
         weeks_workdays = self._prepare_data_from_db(limit=limit)
         try:
-            self._ui.clear_table()
-            for week_workdays in weeks_workdays:
-                work_week = WorkWeek(week_workdays)
-                week_data = []
-                for workday in work_week.workdays:
-                    workday_data = workday.as_dict()
-                    iid = workday_data.get("iid", None)
-                    if iid is None:
-                        raise AssertionError("Workday data must include 'iid' key")
-                    self._data_buffer[iid] = workday
-                    week_data.append(workday_data)
-                self._ui.fill_main_table(week_data, parents=["month", "week"])
-                self._ui.fill_main_table([work_week.summary], parents=["week"])
+            self._ui.fill_main_table(weeks_workdays, focus_item=self._item_to_focus)
             _log.debug("All fetched database rows have been loaded into main table")
         except Exception:
             _log.exception("Failed to fill main table")
@@ -113,6 +125,7 @@ class App:
             if not skip_update:
                 db_row_values = new_workday.as_db()
                 self._db_if.write_to_db([db_row_values], table=Worktime)
+                self._item_to_focus = utils.date_to_str(new_workday.date, DATE_STRING_MASK)
         except Exception:
             _log.exception("Adding to the database failed:")
         self._ui.insert_default_value()
@@ -120,7 +133,7 @@ class App:
             self.fill_ui_with_workdays(limit=10)
 
     def delete_db_rows(self, table_ids: List[str]) -> None:
-        dates = [datetime.strptime(item, DATE_STRING_MASK) for item in table_ids]
+        dates = [dt.datetime.strptime(item, DATE_STRING_MASK) for item in table_ids]
         row_ids = [str(d.toordinal()) for d in dates]
         self._db_if.delete(row_ids, table=Worktime)
         self.fill_ui_with_workdays(limit=10)
@@ -148,7 +161,7 @@ class App:
 
 root = tkinter.Tk()
 _log.debug("Start application")
-window = Window(master=root, title=APP_NAME, geometry=WINDOW_GEOMETRY)
+window = Window(master=root, table_config=TABLE_CONFIGS, title=APP_NAME, geometry=WINDOW_GEOMETRY)
 app = App(user_interface=window, db_if=WorktimeSqliteDbInterface(sqlite_engine))
 root.mainloop()
 _log.debug("Application closed")

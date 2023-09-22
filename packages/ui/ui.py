@@ -1,57 +1,25 @@
+from __future__ import annotations
+
 import json
 import logging
+import re
 import tkinter as tk
 from datetime import date
+from enum import Enum
 from tkinter import messagebox, scrolledtext, ttk
-from typing import Dict, List, Optional, Union, Any, Protocol, Callable, Sequence
+from typing import Dict, List, Optional, Union, Protocol, Callable, Sequence, TYPE_CHECKING
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from packages.constants import (
-    CONFIG_FILE_PATH,
-    DATE_STRING_MASK,
-    DATE_PATTERN,
-    RowType,
-    UiRow,
-    UiTableConfig,
-    UiTableColumn,
-    TableColumnParams,
-)
-from packages.utils import utils, logging_utils
+from packages.constants import CONFIG_FILE_PATH, DATE_STRING_MASK, DATE_PATTERN, WorkWeek
+from packages.utils import logging_utils
+
+if TYPE_CHECKING:
+    from packages.constants import WorkDay
 
 _log = logging.getLogger("ui")
 
-MAIN_TABLE_NAME = "workdays"
 DEFAULT_INPUT_VALUE = str(date.today().strftime(DATE_STRING_MASK))
-TABLE_COLUMN_PARAMS: Dict[str, List[Dict[str, Any]]] = {
-    MAIN_TABLE_NAME: [
-        {"iid": "date", "width": 120, "text": "date"},
-        {"iid": "worktime", "width": 100, "text": "worktime"},
-        {"iid": "pauses", "width": 100, "text": "pauses"},
-        {"iid": "overtime", "width": 100, "text": "overtime"},
-        # {"iid": "whole_time", "width": 120, "text": "whole time"},
-        {"iid": "time_marks", "width": 400, "text": "time marks"},
-        {"iid": "day_type", "width": 90, "text": "day type", "anchor": "w"},
-    ]
-}
-MAIN_TABLE_CONFIG = UiTableConfig(
-    MAIN_TABLE_NAME,
-    [
-        UiRow(RowType.DATA, rf"{DATE_PATTERN}"),
-        UiRow(RowType.MONTH, r"\w{,8} \d{4}"),
-        UiRow(RowType.WEEK, r"w\d{1,2}"),
-        UiRow(RowType.SUMMARY, r"Summary"),
-    ],
-    [
-        TableColumnParams(UiTableColumn.DATE, 120, "date"),
-        TableColumnParams(UiTableColumn.WORKTIME, 100, "worktime"),
-        TableColumnParams(UiTableColumn.PAUSES, 100, "pauses"),
-        TableColumnParams(UiTableColumn.OVERTIME, 120, "overtime"),
-        TableColumnParams(UiTableColumn.WHOLE_TIME, 100, "whole time"),
-        TableColumnParams(UiTableColumn.TIME_MARKS, 400, "time marks"),
-        TableColumnParams(UiTableColumn.DAY_TYPE, 90, "day type", "w"),
-    ],
-)
 
 
 # TODO: enable/disable log window in settings
@@ -62,39 +30,91 @@ MAIN_TABLE_CONFIG = UiTableConfig(
 # TODO: edit does not work
 # TODO: deleting does not work (row data only)
 # TODO: see selection when click toggle view
+# TODO: add copyright
 
 
-class UserInterface(Protocol):
-    def fill_main_table(self, rows: List[Dict[str, Any]]) -> None:
-        pass
-
-    def set_table_focus(self, table: ttk.Treeview, focus_item: Optional[str] = None) -> None:
-        pass
-
-    def get_variable(self, name: str) -> tk.Variable:
-        pass
-
-    def set_input_validator(self, validator_func: Callable[[str, str, str, str], bool]) -> None:
-        pass
-
-    def insert_default_value(self, value: str) -> None:
-        pass
+class UiTableColumn(Enum):
+    TREE = "#0"
+    DATE = "date"
+    WORKTIME = "worktime"
+    PAUSES = "pauses"
+    OVERTIME = "overtime"
+    WHOLE_TIME = "whole_time"
+    TIME_MARKS = "time_marks"
+    DAY_TYPE = "day_type"
 
 
 @dataclass(frozen=True)
-class TableColumn:
-    iid: str
+class TableColumnParams:
+    iid: UiTableColumn
     width: int
     text: str
     anchor: str = "center"
 
 
-class Window(UserInterface):
-    def __init__(self, master: tk.Tk, **kwargs) -> None:
+TABLE_ROW_TYPES = {"month": r"\w{,8} \d{4}", "data": rf"{DATE_PATTERN}", "week": r"w\d{1,2}", "summary": r"Summary"}
+
+
+# TODO: rename to UiRowType
+class RowType(Enum):
+    DATA = "data"
+    MONTH = "month"
+    WEEK = "week"
+    SUMMARY = "summary"
+
+    @classmethod
+    def from_string(cls, value: str) -> "RowType":
+        for iid_type, pattern in TABLE_ROW_TYPES.items():
+            if re.search(pattern, value):
+                return RowType(iid_type)
+        raise ValueError(f"Row not recognized: {value}")
+
+
+@dataclass
+class UiRow:
+    row_type: RowType
+    pattern: str
+
+
+@dataclass
+class UiTableConfig:
+    table_name: str
+    row_params: List[UiRow] = field(default_factory=list)
+    column_params: List[TableColumnParams] = field(default_factory=list)
+
+
+class UserInterface(Protocol):
+    """A base class not for instantiation"""
+
+    def fill_main_table(
+            self, rows: List[List[WorkDay]], *, focus_item: Optional[date] = None
+    ) -> None:
+        """to override"""
+
+    def set_table_focus(self, table: ttk.Treeview, focus_item: Optional[str] = None) -> None:
+        """to override"""
+
+    def get_variable(self, name: str) -> tk.Variable:
+        """to override"""
+
+    def set_input_validator(self, validator_func: Callable[[str, str, str, str], bool]) -> None:
+        """to override"""
+
+    def insert_default_value(self, value: Optional[str] = DEFAULT_INPUT_VALUE) -> None:
+        """to override"""
+
+    def clear_table(self) -> None:
+        """to override"""
+
+
+class Window:
+    """Window UI"""
+
+    def __init__(self, master: tk.Tk, table_config: Dict[str, UiTableConfig], **kwargs) -> None:
         self.master: tk.Tk = master
         self._default_input_value: Optional[str] = None
-        self._table_column_params: Optional[Dict[str, List[TableColumn]]] = None
         self._set_window_name_and_geometry(master, **kwargs)
+        self._table_config = table_config
         self._init_ui()
         self._variables: List[tk.Variable] = self._init_variables()
 
@@ -125,41 +145,28 @@ class Window(UserInterface):
         master.geometry(f"{x}x{y}")
         master.minsize(x, y)
 
-    @staticmethod
-    def _resolve_table_column_params(
-        table_column_params: Dict[str, List[Dict[str, Any]]]
-    ) -> Dict[str, List[TableColumn]]:
-        table_columns = {}
-        try:
-            for table, column_params in table_column_params.items():
-                table_column = [TableColumn(**params) for params in column_params]
-                table_columns[table] = table_column
-            return table_columns
-        except Exception:
-            _log.exception(f"Resolving table columns failed. Incorrect input values: {table_column_params}")
-            raise
-
-    def _get_table_column_params(self, table: ttk.Treeview) -> List[TableColumn]:
-        table_name = table.winfo_name()
-        assert self._table_column_params is not None, "No table column params found"
-        if table_name not in self._table_column_params:
-            raise AssertionError(f"There are no params provided for the table: {table_name}")
-        return self._table_column_params[table_name]
-
     # TODO: focus on fresh added line
+    # TODO: split the function and parametrize 'parents'
     def fill_main_table(
-            self, rows: List[Dict[str, str]], parents: Sequence[str] = ("",), focus_date: Optional[date] = None
+            self, weeks_workdays: List[List[WorkDay]], focus_item: Optional[str] = None, clear_table: bool = True
     ) -> None:
         table = self._main_table
-        try:
-            self._insert_to_table(table=self._main_table, parents=parents, sorted_rows=rows)
-            if focus_date is not None:
-                focus_item = utils.date_to_str(focus_date, DATE_STRING_MASK)
-                self.set_table_focus(table, focus_item)
-            else:
-                self.set_table_focus(table)
-        except Exception:
-            _log.exception(f"Failed to fill main table")
+        if clear_table:
+            self.clear_table(table)
+        for week_workdays in weeks_workdays:
+            work_week = WorkWeek(week_workdays)
+            week_data = []
+            for workday in work_week.workdays:
+                workday_data = workday.as_dict()
+                iid = workday_data.get("iid", None)
+                if iid is None:
+                    raise AssertionError("Workday data must include 'iid' key")
+                week_data.append(workday_data)
+
+            self._insert_to_table(table=self._main_table, parents=["month", "week"], sorted_rows=week_data)
+            self._insert_to_table(table=self._main_table, parents=["week"], sorted_rows=[work_week.summary])
+
+        self.set_table_focus(table, focus_item)
 
     @staticmethod
     def _insert_to_table(
@@ -187,28 +194,30 @@ class Window(UserInterface):
         table.update()
 
     def set_table_focus(self, table: ttk.Treeview, focus_item: Optional[str] = None) -> None:
-        if focus_item and not table.exists(focus_item):
+        if focus_item is None:
+            focus_item = self._get_table_data_item(table)
+        elif not table.exists(focus_item):
             _log.warning(f"Focusing on a non-existing table item: {focus_item}")
             focus_item = table.get_children()[-1]
-        else:
-            focus_item = self._get_table_data_item(table)
         self._main_table.selection_set(focus_item)
         self._main_table.see(focus_item)
 
     def _get_table_data_item(self, table: ttk.Treeview, item: str = "") -> str:
-        """Gets 'item' from table if provided, otherwise gets very first table item"""
+        """Gets 'item' from table if provided, otherwise gets very last table item"""
         children = self._main_table.get_children(item)
         if children:
-            return self._get_table_data_item(table, children[0])
+            return self._get_table_data_item(table, children[-1])
         else:
             return item
 
     @staticmethod
     def ask_delete(value: str) -> bool:
+        """Displays a modal warning window when a row is going to be deleted"""
         return messagebox.askyesno(title="Warning", message=f"Are you sure to delete from database:\n{value}?")
 
-    def clear_table(self, table: Optional[ttk.Treeview] = None) -> None:
-        table = table if table else self._main_table
+    @staticmethod
+    def clear_table(table: ttk.Treeview) -> None:
+        """Clear Treeview table"""
         for i in table.get_children():
             table.delete(i)
         table.update()
@@ -232,10 +241,11 @@ class Window(UserInterface):
         self.b_style.configure("TButton", height=2, font="Arial 14")
 
     def insert_default_value(self, value: Optional[str] = DEFAULT_INPUT_VALUE) -> None:
+        """Inserts 'value' into Entry widget"""
         if value is not None:
             self._default_input_value = value
         if self._default_input_value is None:
-            raise AssertionError(f"Default input value must be received from a controller class")
+            raise AssertionError("Default input value must be received from a controller class")
         self.input.delete(0, tk.END)
         for i in self._default_input_value + " ":
             self.input.insert(tk.END, i)
@@ -258,22 +268,27 @@ class Window(UserInterface):
         )
         self.submit_button.pack(pady=20, ipady=20)
 
-    @staticmethod
-    def _config_table(table: ttk.Treeview, *, columns: List[TableColumn]) -> None:
-        # table.heading("#0", text="month")
-        table.column("#0", width=170, anchor=tk.W)
-        for column in columns:
-            table.column(column.iid, width=column.width, anchor=column.anchor)
-            table.heading(column.iid, text=column.text, anchor=column.anchor)
+    def _config_table(self, table: ttk.Treeview) -> None:
+        table_config = [config for config in self._table_config.values() if config.table_name == table.winfo_name()]
+        assert table_config, f"Config not found for the table: {table.winfo_name()}"
+        for column in table_config[0].column_params:
+            table.column(column.iid.value, width=column.width, anchor=column.anchor)
+            if column.iid.value != "#0":
+                table.heading(column.iid.value, text=column.text, anchor=column.anchor)
 
     def _init_main_table(self, master: ttk.Frame) -> None:
-        assert self._table_column_params is not None
-        column_params = self._table_column_params[MAIN_TABLE_NAME]
+        main_table_config = self._table_config.get("main", None)
+        assert main_table_config is not None, "Please provide main table config to Window class"
         style = ttk.Style()
         style.configure("Treeview", rowheight=22, font=("Calibri", 11))
-        columns = [c.iid for c in column_params]
+        columns = [c.iid.value for c in main_table_config.column_params if c.iid.value != "#0"]
         self._main_table = ttk.Treeview(
-            master, name=MAIN_TABLE_NAME, columns=columns, height=20, style="Treeview", show=["tree", "headings"]
+            master,
+            name=main_table_config.table_name,
+            columns=columns,
+            height=20,
+            style="Treeview",
+            show=["tree", "headings"],
         )
         y = ttk.Scrollbar(master, orient="vertical", command=self._main_table.yview)
         y.pack(side="right", fill="y")
@@ -282,7 +297,7 @@ class Window(UserInterface):
         self._main_table.tag_configure("default", background="white")
         self._main_table.tag_configure("green", background="honeydew")
         self._main_table.tag_configure("red", background="mistyrose")
-        self._config_table(self._main_table, columns=column_params)
+        self._config_table(self._main_table)
         self._main_table.pack(fill="both", expand=True)
         y.config(command=self._main_table.yview)
 
@@ -290,7 +305,6 @@ class Window(UserInterface):
         _log.debug("Initialize main table")
         frame = ttk.Frame(master)
         frame.grid(row=1, column=0, sticky="nsew")
-        self._table_column_params = self._resolve_table_column_params(TABLE_COLUMN_PARAMS)
         self._init_main_table(frame)
 
     def _toggle_table_data_view(self, table: ttk.Treeview) -> None:
