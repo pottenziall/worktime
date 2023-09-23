@@ -1,7 +1,4 @@
 [MAIN]
-disable=missing-module-docstring
-disable=missing-class-docstring
-disable=missing-function-docstring
 
 # Analyse import fallback blocks. This can be used to support both Python 2 and
 # 3 compatible code, which means that the block might have code that exists
@@ -398,7 +395,7 @@ preferred-modules=
 # The type of string formatting that logging methods do. `old` means using %
 # formatting, `new` is for `{}` formatting.
 # logging-format-style=new
-disable=logging-fstring-interpolation
+
 
 # Logging modules to check that the string format arguments are in logging
 # function parameter format.
@@ -435,6 +432,10 @@ disable=raw-checker-failed,
         use-implicit-booleaness-not-comparison-to-string,
         use-implicit-booleaness-not-comparison-to-zero,
         use-symbolic-message-instead
+        missing-module-docstring
+        missing-class-docstring
+        missing-function-docstring
+        logging-fstring-interpolation
 
 # Enable the message, report, category or checker with the given id(s). You can
 # either give multiple identifier separated by comma (,) or put this option

@@ -7,7 +7,7 @@ import tkinter as tk
 from datetime import date
 from enum import Enum
 from tkinter import messagebox, scrolledtext, ttk
-from typing import Dict, List, Optional, Union, Protocol, Callable, Sequence, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from dataclasses import dataclass, field
 
@@ -15,6 +15,7 @@ from packages.constants import CONFIG_FILE_PATH, DATE_STRING_MASK, DATE_PATTERN,
 from packages.utils import logging_utils
 
 if TYPE_CHECKING:
+    from typing import Dict, List, Optional, Union, Protocol, Callable, Sequence
     from packages.constants import WorkDay
 
 _log = logging.getLogger("ui")
@@ -86,9 +87,7 @@ class UiTableConfig:
 class UserInterface(Protocol):
     """A base class not for instantiation"""
 
-    def fill_main_table(
-            self, rows: List[List[WorkDay]], *, focus_item: Optional[date] = None
-    ) -> None:
+    def fill_main_table(self, rows: List[List[WorkDay]], *, focus_item: Optional[str] = None) -> None:
         """to override"""
 
     def set_table_focus(self, table: ttk.Treeview, focus_item: Optional[str] = None) -> None:
@@ -107,14 +106,14 @@ class UserInterface(Protocol):
         """to override"""
 
 
-class Window:
+class Window(UserInterface):
     """Window UI"""
 
-    def __init__(self, master: tk.Tk, table_config: Dict[str, UiTableConfig], **kwargs) -> None:
+    def __init__(self, master: tk.Tk, ui_config: Dict[str, UiTableConfig], **kwargs) -> None:
         self.master: tk.Tk = master
         self._default_input_value: Optional[str] = None
         self._set_window_name_and_geometry(master, **kwargs)
-        self._table_config = table_config
+        self._ui_config = ui_config
         self._init_ui()
         self._variables: List[tk.Variable] = self._init_variables()
 
@@ -269,7 +268,7 @@ class Window:
         self.submit_button.pack(pady=20, ipady=20)
 
     def _config_table(self, table: ttk.Treeview) -> None:
-        table_config = [config for config in self._table_config.values() if config.table_name == table.winfo_name()]
+        table_config = [config for config in self._ui_config.values() if config.table_name == table.winfo_name()]
         assert table_config, f"Config not found for the table: {table.winfo_name()}"
         for column in table_config[0].column_params:
             table.column(column.iid.value, width=column.width, anchor=column.anchor)
@@ -277,7 +276,7 @@ class Window:
                 table.heading(column.iid.value, text=column.text, anchor=column.anchor)
 
     def _init_main_table(self, master: ttk.Frame) -> None:
-        main_table_config = self._table_config.get("main", None)
+        main_table_config = self._ui_config.get("main_table", None)
         assert main_table_config is not None, "Please provide main table config to Window class"
         style = ttk.Style()
         style.configure("Treeview", rowheight=22, font=("Calibri", 11))
