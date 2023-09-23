@@ -1,8 +1,8 @@
 {
-    "time marks": 0,
-    "whole time": 0,
-    "overtime": 1,
-    "pause": 1,
-    "log panel visible": 0,
-    "log level debug": 0
+    "time marks": "0",
+    "whole time": "0",
+    "overtime": "0",
+    "pause": "0",
+    "log panel visible": "0",
+    "log level debug": "0"
 }

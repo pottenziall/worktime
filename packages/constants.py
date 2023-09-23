@@ -78,7 +78,7 @@ class WorkDay:
 
     @classmethod
     def _find_date(cls, input_string: str) -> dt.date:
-        date_values = re.findall(pattern=f"{DATE_PATTERN}|{ORDINAL_DATE_PATTERN}", string=input_string)
+        date_values = re.findall(pattern=f"^({DATE_PATTERN}|{ORDINAL_DATE_PATTERN})", string=input_string)
         if len(date_values) != 1:
             raise ValueError(f"Input string must contain one date mark only: '{input_string}'")
         return cls._recognize_date(value=date_values[0], mask=DATE_STRING_MASK)
@@ -86,7 +86,7 @@ class WorkDay:
     @staticmethod
     def _recognize_time_marks(input_string: str) -> List[dt.time]:
         try:
-            time_values = re.findall(TIME_PATTERN, input_string)
+            time_values = re.findall(rf" ({TIME_PATTERN})", input_string)
             times = {dt.datetime.strptime(value, TIME_STRING_MASK).time() for value in time_values}
             return list(sorted(times))
         except ValueError:
@@ -161,13 +161,13 @@ class WorkDay:
             day_type = DayType.NORMAL
         elif not self.day_type.value and not other.day_type.value:
             # both WorkDays are normal (regular)
-            _log.debug(f'For "{date_str}", existing time marks \
-                       and new ones will be combined. \
-                       Result: {time_to_str(self.times, TIME_STRING_MASK)}')
             times_set = set(self.times)
             times_set.update(other.times)
             times = sorted(list(times_set))
             day_type = DayType.NORMAL
+            _log.debug(f'For "{date_str}", existing time marks \
+                       and new ones will be combined. \
+                       Result: {time_to_str(times, TIME_STRING_MASK)}')
         else:
             _log.critical("Caught unhandled error")
             raise RuntimeError(f"Unspecified scenario between WorkDays: \n\t{self}\n\t{other}")

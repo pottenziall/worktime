@@ -7,7 +7,7 @@ import tkinter as tk
 from datetime import date
 from enum import Enum
 from tkinter import messagebox, scrolledtext, ttk
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from dataclasses import dataclass, field
 
@@ -15,7 +15,7 @@ from packages.constants import CONFIG_FILE_PATH, DATE_STRING_MASK, DATE_PATTERN,
 from packages.utils import logging_utils
 
 if TYPE_CHECKING:
-    from typing import Dict, List, Optional, Union, Protocol, Callable, Sequence
+    from typing import Dict, List, Optional, Callable, Sequence, Literal
     from packages.constants import WorkDay
 
 _log = logging.getLogger("ui")
@@ -50,10 +50,10 @@ class TableColumnParams:
     iid: UiTableColumn
     width: int
     text: str
-    anchor: str = "center"
+    anchor: Literal['nw', 'n', 'ne', 'w', 'center', 'e', 'sw', 's', 'se'] = "center"
 
 
-TABLE_ROW_TYPES = {"month": r"\w{,8} \d{4}", "data": rf"{DATE_PATTERN}", "week": r"w\d{1,2}", "summary": r"Summary"}
+TABLE_ROW_TYPES = {"month": r"\w{,8} \d{4}", "data": rf"{DATE_PATTERN}", "week": r"w\d{1,2}", "summary": r"\d{1,2}h"}
 
 
 # TODO: rename to UiRowType
@@ -87,7 +87,9 @@ class UiTableConfig:
 class UserInterface(Protocol):
     """A base class not for instantiation"""
 
-    def fill_main_table(self, rows: List[List[WorkDay]], *, focus_item: Optional[str] = None) -> None:
+    def fill_main_table(
+            self, weeks_workdays: List[List[WorkDay]], *, focus_item: Optional[str] = None, clear_table: bool = True
+    ) -> None:
         """to override"""
 
     def set_table_focus(self, table: ttk.Treeview, focus_item: Optional[str] = None) -> None:
@@ -102,14 +104,15 @@ class UserInterface(Protocol):
     def insert_default_value(self, value: Optional[str] = DEFAULT_INPUT_VALUE) -> None:
         """to override"""
 
-    def clear_table(self) -> None:
+    @staticmethod
+    def clear_table(table: ttk.Treeview) -> None:
         """to override"""
 
 
 class Window(UserInterface):
     """Window UI"""
 
-    def __init__(self, master: tk.Tk, ui_config: Dict[str, UiTableConfig], **kwargs) -> None:
+    def __init__(self, master: tk.Tk, ui_config: Dict[str, UiTableConfig], **kwargs: str) -> None:
         self.master: tk.Tk = master
         self._default_input_value: Optional[str] = None
         self._set_window_name_and_geometry(master, **kwargs)
@@ -136,18 +139,19 @@ class Window(UserInterface):
         raise AssertionError(f"Variable is not implemented: {name}")
 
     @staticmethod
-    def _set_window_name_and_geometry(master: tk.Tk, **kwargs) -> None:
+    def _set_window_name_and_geometry(master: tk.Tk, **kwargs: str) -> None:
         title = kwargs.get("title", "App")
-        x, y = kwargs.get("geometry", (1200, 900))
-        _log.debug(f'Set window name to "{title}" with geometry "{x}x{y}"')
+        geometry = kwargs.get("geometry", "1200x900")
+        _log.debug(f'Set window name to "{title}" with geometry "{geometry}"')
         master.title(title)
-        master.geometry(f"{x}x{y}")
-        master.minsize(x, y)
+        master.geometry(geometry)
+        x, y = geometry.split("x")
+        master.minsize(int(x), int(y))
 
     # TODO: focus on fresh added line
     # TODO: split the function and parametrize 'parents'
     def fill_main_table(
-            self, weeks_workdays: List[List[WorkDay]], focus_item: Optional[str] = None, clear_table: bool = True
+            self, weeks_workdays: List[List[WorkDay]], *, focus_item: Optional[str] = None, clear_table: bool = True
     ) -> None:
         table = self._main_table
         if clear_table:
@@ -260,6 +264,7 @@ class Window(UserInterface):
         self.input = ttk.Entry(frame, width=60, font="Arial 19")
         self.input.pack(padx=10, fill="both", expand=True)
         self.input.bind("<Return>", self._submit_input_value)
+        self.input.bind("<KP_Enter>", self._submit_input_value)
         self.input.focus_set()
 
         self.submit_button = ttk.Button(
@@ -271,7 +276,7 @@ class Window(UserInterface):
         table_config = [config for config in self._ui_config.values() if config.table_name == table.winfo_name()]
         assert table_config, f"Config not found for the table: {table.winfo_name()}"
         for column in table_config[0].column_params:
-            table.column(column.iid.value, width=column.width, anchor=column.anchor)
+            table.column(column.iid.value, width=column.width, minwidth=column.width, anchor=column.anchor)
             if column.iid.value != "#0":
                 table.heading(column.iid.value, text=column.text, anchor=column.anchor)
 
@@ -320,46 +325,41 @@ class Window(UserInterface):
         settings_window = SettingsWindow(root=self.master)
         self.master.wait_window(settings_window.top_level)
         if settings_window.returned_value:
+            with open(CONFIG_FILE_PATH, "w+", encoding="utf8") as f:
+                json.dump(settings_window.returned_value, f)
             # TODO: change the error comment
             _log.error(settings_window.returned_value)
 
     @staticmethod
     def _get_selected(
         table: ttk.Treeview, single_only: bool = False, data_rows_only: bool = False
-    ) -> Optional[Dict[str, List]]:
+    ) -> Optional[Dict[str, str]]:
         select = table.selection()
         if single_only and len(select) != 1:
-            _log.warning("Please, select one row in table")
+            _log.warning("Please select only one row in the table")
             return None
-        selected = {sel: table.item(sel, option="values") for sel in select}
+        selected = {sel: " ".join(table.item(sel, option="values")) for sel in select}
         if data_rows_only:
-            return {sel: val for sel, val in selected.items() if RowType.from_string("".join(val)) == RowType.DATA}
+            data_rows = {sel: val for sel, val in selected.items() if RowType.from_string("".join(val)) == RowType.DATA}
+            if not data_rows:
+                _log.warning("Please select data row")
+                return None
+            return data_rows
         return selected
 
     def _edit_table_row(self, table: ttk.Treeview) -> None:
         selected = self._get_selected(table, single_only=True, data_rows_only=True)
-        if not selected:
+        if selected is None:
             return
-        table_row_id, _ = selected.popitem()
-        # db_row = get_row_from_db_table(row_values=values)
-        # TODO: Manage case when db_row is None
-        # if db_row is None:
-        #    raise RuntimeError("No rows to edit")
-        # value_to_edit = " ".join(db_row[0])
-        value_to_edit = ""
+        _, value_to_edit = selected.popitem()
         edit_window = EditWindow(root=self.master)
         edit_window.insert_to_entry(value_to_edit)
         self.master.wait_window(edit_window.top_level)
-        if edit_window.returned_value and not value_to_edit == edit_window.returned_value:
-            self.get_variable("edited_table_row").set(edit_window.returned_value)
-        # previous_date = values[0]
-        # current_date = edit_window.returned_value.split()[0]
-        # if current_date != previous_date:
-        #    _log.error(f"Date editing under developing")
-        # else:
-        #    process_value(edit_window.returned_value)
-        _log.debug("Value has not changed")
-        # self.root.wait_visibility(self.root)
+        if edit_window.returned_value is not None and not value_to_edit == edit_window.returned_value:
+            self.get_variable("edited_table_row").set(edit_window.returned_value["value"])
+            return
+        _log.debug(f"Values have not been changed: {value_to_edit}")
+        # self.master.wait_visibility(self.master)
 
     def _delete_selected_table_rows(self, table: ttk.Treeview) -> None:
         selected = self._get_selected(table, data_rows_only=True)
@@ -413,7 +413,7 @@ class Window(UserInterface):
     def _get_input_value(self) -> str:
         return self.input.get()
 
-    def _submit_input_value(self, event=None) -> None:
+    def _submit_input_value(self, event: Optional[tk.Event[tk.Entry]] = None) -> None:
         value = self._get_input_value()
         self.get_variable("input_value").set(value)
 
@@ -422,25 +422,26 @@ class Window(UserInterface):
 
 
 class ModalWindow:
+    """Base class, not for instantiating"""
+
     def __init__(self, root: tk.Tk) -> None:
         # self.master.wm_attributes("-disabled", True)
-        self.returned_value: Union[str, Dict] = ""
-        self.top_level = self._init_top(root)
+        self.returned_value: Optional[Dict[str, str]] = None
+        self.top_level = self._init_top_window(root)
         self._init_ui(self.top_level)
 
     @staticmethod
-    def _init_top(root: tk.Tk) -> tk.Toplevel:
+    def _init_top_window(root: tk.Tk) -> tk.Toplevel:
         top_level = tk.Toplevel(root)
         top_level.geometry("600x250")
-        top_level.title("Modal")
         top_level.grab_set()
         top_level.transient(root)
         return top_level
 
     def _init_ui(self, master: tk.Toplevel) -> None:
-        pass
+        """to override"""
 
-    def _submit(self, value: Union[str, Dict]) -> None:
+    def _submit(self, value: Dict[str, str]) -> None:
         self.returned_value = value
         self._destroy_widgets()
 
@@ -451,24 +452,29 @@ class ModalWindow:
 
 
 class EditWindow(ModalWindow):
+    """Modal window to edit main Entry widget value"""
+
     def insert_to_entry(self, text: str) -> None:
         self.edit_entry.insert(tk.END, text)
 
     def _init_ui(self, master: tk.Toplevel) -> None:
         master.title("Editor")
+        label_text = "Provide space separated values. An example with a date and times: '11.12.2022 10:00 12:00'"
+        ttk.Label(master, text=label_text).pack(pady=10)
         self.edit_entry = ttk.Entry(master, width=45, font="Arial 13")
-        self.edit_entry.pack(pady=25)
-
-        submit_b = tk.Button(
-            master, text="SUBMIT", width=20, height=3, command=lambda: self._submit(self.edit_entry.get())
-        )
+        self.edit_entry.pack(pady=15)
+        # self.edit_entry.config(validatecommand=self._root, validate="key")
+        # TODO: add label info: example of values
+        submit_b = tk.Button(master, text="SUBMIT", width=20, height=3)
+        submit_b["command"] = lambda: self._submit(self._get_edit_entry_value())
         submit_b.pack(padx=10, pady=15, anchor="s")
+
+    def _get_edit_entry_value(self) -> Dict[str, str]:
+        return {"value": self.edit_entry.get()}
 
 
 class SettingsWindow(ModalWindow):
-    def __init__(self, root: tk.Tk) -> None:
-        super().__init__(root)
-        self.returned_value: Dict = {}
+    """Modal window with settings list"""
 
     def _init_ui(self, master: tk.Toplevel) -> None:
         master.title("Settings")
@@ -476,42 +482,25 @@ class SettingsWindow(ModalWindow):
         left_frame.pack(pady=10, padx=10, side="left", expand=True, fill="both")
         right_frame = tk.Frame(master)
         right_frame.pack(pady=10, padx=10, side="right", expand=True, fill="both")
-        label_1 = tk.Label(left_frame, text="Table columns:")
-        label_1.pack(padx=17, pady=3, anchor="w")
-        column_names = ["time marks", "whole time", "overtime", "pause"]
-        variables = []
-        for name in column_names:
-            var = tk.IntVar(name=name)
-            checkbutton = tk.Checkbutton(left_frame, text=name, variable=var)
-            checkbutton.pack(padx=15, pady=2, anchor="w")
-            variables.append(var)
-        sep = ttk.Separator(master, orient="vertical")
-        sep.pack(padx=5, pady=5, expand=True, fill="x")
-        label_2 = tk.Label(right_frame, text="Other settings:")
-        label_2.pack(padx=17, pady=3, anchor="w")
-        names = ["log panel visible", "log level debug"]
-        for name in names:
-            var = tk.IntVar(name=name)
-            checkbutton = tk.Checkbutton(right_frame, text=name, variable=var)
-            checkbutton.pack(padx=15, pady=2, anchor="w")
-            variables.append(var)
-        button = tk.Button(
-            master, text="SAVE", width=20, height=2, command=lambda: self._submit(self._get_states(variables))
-        )
-        button.pack(side="bottom", pady=20, anchor="n")
+
+        tk.Label(left_frame, text="Table columns:").pack(padx=17, pady=3, anchor="w")
+        ttk.Separator(master, orient="vertical").pack(padx=5, pady=5, expand=True, fill="x")
+        tk.Label(right_frame, text="Other settings:").pack(padx=17, pady=3, anchor="w")
+
+        column_vars = [tk.IntVar(name=name) for name in ["time marks", "whole time", "overtime", "pause"]]
+        for c_var in column_vars:
+            tk.Checkbutton(left_frame, text=str(c_var), variable=c_var).pack(padx=15, pady=2, anchor="w")
+        other_vars = [tk.IntVar(name=name) for name in ["log panel visible", "log level debug"]]
+        for var in other_vars:
+            tk.Checkbutton(right_frame, text=str(var), variable=var).pack(padx=15, pady=2, anchor="w")
+
+        save_button = tk.Button(master, text="SAVE", width=20, height=2)
+        save_button["command"] = lambda: self._submit(self._get_states(column_vars + other_vars))
+        save_button.pack(side="bottom", pady=20, anchor="n")
 
     @staticmethod
-    def _get_states(variables: List[tk.IntVar]) -> Dict[str, int]:
-        states = {}
-        for var in variables:
-            states[str(var)] = var.get()
-        return states
-
-    def _submit(self, value: Union[str, Dict]) -> None:
-        self.returned_value = value
-        self._destroy_widgets()
-        with open(CONFIG_FILE_PATH, "w+", encoding="utf8") as f:
-            json.dump(value, f)
+    def _get_states(variables: List[tk.IntVar]) -> Dict[str, str]:
+        return {str(var): str(var.get()) for var in variables}
 
 
 if __name__ == "__main__":

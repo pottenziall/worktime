@@ -27,7 +27,7 @@ _log = logging.getLogger("main")
 # TODO: fill table order in settings
 
 APP_NAME = "Timely"
-WINDOW_GEOMETRY = (1310, 900)
+WINDOW_GEOMETRY = "1310x900"
 MAIN_TABLE_CONFIG = UiTableConfig(
     "workdays",
     [

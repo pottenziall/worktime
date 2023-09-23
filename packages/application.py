@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from packages.db.database_interface import WorktimeSqliteDbInterface
     from packages.ui.ui import UserInterface
 
-_log = logging.getLogger(__name__)
+_log = logging.getLogger("app")
 
 AppConfig = Dict[str, Union[int, str]]
 
@@ -43,7 +43,7 @@ class App:
         rows_to_delete_var.trace_variable("w", lambda *x: self.delete_db_rows(rows_to_delete_var.get().split(",")))
 
         edit_table_row_var = self._ui.get_variable("edited_table_row")
-        edit_table_row_var.trace_variable("w", lambda *x: self.add_to_db(edit_table_row_var.get()))
+        edit_table_row_var.trace_variable("w", lambda *x: self.add_to_db(edit_table_row_var.get(), force_update=True))
 
         fill_table_with_all_data_var = self._ui.get_variable("fill_table_with_all_data")
         fill_table_with_all_data_var.trace_variable("w", lambda *x: self.fill_ui_with_workdays())
@@ -64,7 +64,7 @@ class App:
                     weeks_workdays.append([])
                     current_week = workday.week
                 weeks_workdays[-1].append(workday)
-            _log.debug(f"{len(workdays)} rows from the database have been prepared")
+            _log.debug(f"{len(workdays)} rows from database have been prepared")
             return weeks_workdays
         except Exception:
             _log.exception("Failed to prepare data from the database")
@@ -74,11 +74,11 @@ class App:
         weeks_workdays = self._prepare_data_from_db(limit=limit)
         try:
             self._ui.fill_main_table(weeks_workdays, focus_item=self._item_to_focus)
-            _log.debug("All fetched database rows have been loaded into main table")
+            _log.debug("All fetched database rows have been inserted into main table")
         except Exception:
             _log.exception("Failed to fill main table")
 
-    def add_to_db(self, table_value: str) -> None:
+    def add_to_db(self, table_value: str, force_update: bool = False) -> None:
         skip_update = False
         try:
             new_workday = WorkDay.from_values(table_value)
@@ -87,15 +87,19 @@ class App:
             if found_in_db is not None:
                 assert len(found_in_db) == 1, f"CRITICAL: database contains {len(found_in_db)} items for '{key}' key"
                 workday_from_db = found_in_db[0].as_workday()
-                new_workday = workday_from_db + new_workday
-                if new_workday == workday_from_db:
-                    skip_update = True
+                if not force_update:
+                    new_workday = workday_from_db + new_workday
+                    if new_workday == workday_from_db:
+                        skip_update = True
+                else:
+                    _log.warning(f"Database values '{workday_from_db}' will be replaced with '{new_workday}'")
             if not skip_update:
                 db_row_values = new_workday.as_db()
                 self._db_if.write_to_db([db_row_values], table=Worktime)
                 self._item_to_focus = utils.date_to_str(new_workday.date, DATE_STRING_MASK)
         except Exception:
-            _log.exception("Adding to the database failed:")
+            _log.exception("Failed to add values to database")
+            skip_update = True
         self._ui.insert_default_value()
         if not skip_update:
             self.fill_ui_with_workdays(limit=10)
@@ -111,13 +115,14 @@ class App:
     def validate_input(full_value: str, current: str, d_status: str, ind: str) -> bool:
         if not full_value or d_status == "0":
             return True
+        date_mask = r"\d,\d,.,\d,\d,.,\d,\d,\d,\d"
         masks = [
-            r"\d,\d,.,\d,\d,.,\d,\d,\d,\d, ,\d,\d,:,\d,\d, ,\d,\d,:,\d,\d, ,\d,\d,:,\d,\d, ,\d,\d,:,\d,\d, ,\d,\d,:,\d,\d",
-            r"\d,\d,.,\d,\d,.,\d,\d,\d,\d, ,v,a,c,a,t,i,o,n",
-            r"\d,\d,.,\d,\d,.,\d,\d,\d,\d, ,o,f,f",
-            r"\d,\d,.,\d,\d,.,\d,\d,\d,\d, ,d,a,y, ,o,f,f",
-            r"\d,\d,.,\d,\d,.,\d,\d,\d,\d, ,s,i,c,k",
-            r"\d,\d,.,\d,\d,.,\d,\d,\d,\d, ,h,o,l,i,d,a,y",
+            rf"{date_mask}, ,\d,\d,:,\d,\d, ,\d,\d,:,\d,\d, ,\d,\d,:,\d,\d, ,\d,\d,:,\d,\d, ,\d,\d,:,\d,\d",
+            rf"{date_mask}, ,v,a,c,a,t,i,o,n",
+            rf"{date_mask}, ,o,f,f",
+            rf"{date_mask}, ,d,a,y, ,o,f,f",
+            rf"{date_mask}, ,s,i,c,k",
+            rf"{date_mask}, ,h,o,l,i,d,a,y",
         ]
         for mask in masks:
             pattern = "".join(mask.split(",")[: int(ind) + 1])
