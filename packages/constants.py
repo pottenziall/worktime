@@ -18,7 +18,7 @@ MAIN_FILE_PATH = sys.modules['__main__'].__file__
 assert MAIN_FILE_PATH is not None
 MAIN_DIR = Path(MAIN_FILE_PATH).parent
 
-DEFAULT_DB_PATH = f"{MAIN_DIR}/test_worktime.db"
+DEFAULT_DB_PATH = f"{MAIN_DIR}/worktime.db"
 CONFIG_FILE_PATH = f"{MAIN_DIR}/config.json"
 LOG_FILE_PATH = f"{MAIN_DIR}/worktime.log"
 DEFAULT_WORKDAY_TIMEDELTA = dt.timedelta(hours=8)
@@ -30,7 +30,7 @@ ORDINAL_DATE_PATTERN = r"\d{6}"
 TIME_PATTERN = r"\d\d:\d\d"
 NORMAL_WORKDAY_TIMES = [
     dt.datetime.strptime("08:00", TIME_STRING_MASK).time(),
-    dt.datetime.strptime("16:00", TIME_STRING_MASK).time()
+    dt.datetime.strptime("16:00", TIME_STRING_MASK).time(),
 ]
 
 
@@ -124,20 +124,22 @@ class WorkDay:
             # Input contains date, day type and time marks. Check for consistency
             for item in day_type_params.times:
                 if item not in times:
-                    raise ValueError(f'Inconsistency of input values: day type "{day_type}" \
-                                     does not match predefined time marks: {times}". \
-                                     Predefined time marks will be used.')
+                    raise ValueError(
+                        f'Inconsistency of input values: day type "{day_type}" '
+                        f'does not match predefined time marks: {times}". '
+                        f'Predefined time marks will be used.'
+                    )
             return WorkDay(date=date_instance, times=day_type_params.times, day_type=day_type_params.name)
         else:
             # Invalid input value
-            raise ValueError(f"Input must include at least one date \
-                             and either time mark or day type or both: '{string_value}'")
+            raise ValueError(
+                f"Input must include at least one date and either time mark or day type or both: '{string_value}'"
+            )
 
     def __add__(self, other: "WorkDay") -> "WorkDay":
-        assert self.date == other.date, (
-            f'Only WorkDays with the same date can be added:'
-            f' left {self.date}, but right {other.date}'
-        )
+        assert (
+                self.date == other.date
+        ), f'Only WorkDays with the same date can be added: left {self.date}, but right {other.date}'
         date_str = str(self).split()[0]
         if not other.times and not other.day_type.value:
             _log.warning(f"No new data to update: '{other}'")
@@ -145,18 +147,20 @@ class WorkDay:
         if other.day_type.value:
             # new day type entered by the user
             _log.warning(
-                f'For "{date_str}", time marks will be replaced in db, \
-                because "{other.day_type.value}" day type came: \
-                {time_to_str(self.times, TIME_STRING_MASK)} -> \
-                {time_to_str(other.times, TIME_STRING_MASK)}'
+                f'For "{date_str}", time marks will be replaced in db, '
+                f'because "{other.day_type.value}" day type came: '
+                f'{time_to_str(self.times, TIME_STRING_MASK)} -> '
+                f'{time_to_str(other.times, TIME_STRING_MASK)}'
             )
             times = sorted(list(set(other.times)))
             day_type = other.day_type
         elif self.day_type.value and not other.day_type.value:
             # no day_type entered by user, existing WorkDay will be converted to normal with new time marks
-            _log.warning(f'For "{date_str}", time marks will be replaced in db: '
-                         f'{time_to_str(self.times, TIME_STRING_MASK)} -> '
-                         f'{time_to_str(other.times, TIME_STRING_MASK)}')
+            _log.warning(
+                f'For "{date_str}", time marks will be replaced in db: '
+                f'{time_to_str(self.times, TIME_STRING_MASK)} -> '
+                f'{time_to_str(other.times, TIME_STRING_MASK)}'
+            )
             times = sorted(list(set(other.times)))
             day_type = DayType.NORMAL
         elif not self.day_type.value and not other.day_type.value:
@@ -165,9 +169,10 @@ class WorkDay:
             times_set.update(other.times)
             times = sorted(list(times_set))
             day_type = DayType.NORMAL
-            _log.debug(f'For "{date_str}", existing time marks \
-                       and new ones will be combined. \
-                       Result: {time_to_str(times, TIME_STRING_MASK)}')
+            _log.debug(
+                f'For "{date_str}", existing time marks and new ones will be combined. '
+                f'Result: {time_to_str(times, TIME_STRING_MASK)}'
+            )
         else:
             _log.critical("Caught unhandled error")
             raise RuntimeError(f"Unspecified scenario between WorkDays: \n\t{self}\n\t{other}")
@@ -175,12 +180,7 @@ class WorkDay:
 
     @property
     def color(self) -> str:
-        if any(
-            [
-                self.worktime < DEFAULT_WORKDAY_TIMEDELTA,
-                self.whole_time == dt.timedelta(seconds=0),
-            ]
-        ):
+        if any([self.worktime < DEFAULT_WORKDAY_TIMEDELTA, self.whole_time == dt.timedelta(seconds=0)]):
             return "red"
         elif self.overtime > dt.timedelta(0):
             return "green"

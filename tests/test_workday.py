@@ -289,6 +289,4 @@ class TestConvertWorkday:
         workday = WorkDay(**workday_values)
         assert str(workday) == result
 
-    # TODO:
-    # test_should_warn_if_weekend_day
-    # test_should_return_proper_color_name
+    # TODO: add test_should_warn_if_weekend_day and test_should_return_proper_color_name

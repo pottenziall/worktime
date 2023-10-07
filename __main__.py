@@ -42,7 +42,6 @@ MAIN_TABLE_CONFIG = UiTableConfig(
         TableColumnParams(UiTableColumn.WORKTIME, 100, "worktime"),
         TableColumnParams(UiTableColumn.PAUSES, 100, "pauses"),
         TableColumnParams(UiTableColumn.OVERTIME, 120, "overtime"),
-        # TableColumnParams(UiTableColumn.WHOLE_TIME, 100, "whole time"),
         TableColumnParams(UiTableColumn.TIME_MARKS, 400, "time marks"),
         TableColumnParams(UiTableColumn.DAY_TYPE, 90, "day type", "w"),
     ],
